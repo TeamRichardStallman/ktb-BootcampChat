@@ -135,7 +135,14 @@ module.exports = function (io) {
   // 중복 로그인 처리 함수
   const handleDuplicateLogin = async (existingSocket, newSocket) => {
     try {
-      // 기존 연결에 중복 로그인 알림
+      if (!existingSocket) {
+        console.warn(
+          "[Socket.IO] No existing socket found for duplicate login"
+        );
+        return;
+      }
+
+      // 기존 연결에 알림 전송
       existingSocket.emit("duplicate_login", {
         type: "new_login_attempt",
         deviceInfo: newSocket.handshake.headers["user-agent"],
@@ -143,9 +150,12 @@ module.exports = function (io) {
         timestamp: Date.now(),
       });
 
-      // 10초 타임아웃 후 기존 연결 종료
+      // 기존 소켓 종료 처리
       setTimeout(() => {
         if (existingSocket.connected) {
+          console.log(
+            `[Socket.IO] Disconnecting existing socket: ${existingSocket.id}`
+          );
           existingSocket.emit("session_ended", {
             reason: "duplicate_login",
             message: "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.",
@@ -154,8 +164,7 @@ module.exports = function (io) {
         }
       }, DUPLICATE_LOGIN_TIMEOUT);
     } catch (error) {
-      console.error("Duplicate login handling error:", error);
-      throw error;
+      console.error("[Socket.IO] Duplicate login handling error:", error);
     }
   };
 
@@ -176,10 +185,14 @@ module.exports = function (io) {
 
       // 이미 연결된 사용자인지 확인
       const existingSocketId = connectedUsers.get(decoded.user.id);
+      console.log("existingSocketId: ", existingSocketId);
+
       if (existingSocketId) {
         const existingSocket = io.sockets.sockets.get(existingSocketId);
         if (existingSocket) {
           // 중복 로그인 처리
+          console.log("existingSocket: ", existingSocket);
+
           await handleDuplicateLogin(existingSocket, socket);
         }
       }
@@ -188,10 +201,17 @@ module.exports = function (io) {
         decoded.user.id,
         sessionId
       );
-      if (!validationResult.isValid) {
-        console.error("Session validation failed:", validationResult);
-        return next(new Error(validationResult.message || "Invalid session"));
+      if (validationResult.isValid) {
+        connectedUsers.set(decoded.user.id, socket.id);
+        next();
+      } else {
+        next(new Error("Invalid session"));
       }
+
+      // if (!validationResult.isValid) {
+      //   console.error("Session validation failed:", validationResult);
+      //   return next(new Error(validationResult.message || "Invalid session"));
+      // }
 
       const user = await User.findById(decoded.user.id);
       if (!user) {
@@ -224,6 +244,12 @@ module.exports = function (io) {
   });
 
   io.on("connection", (socket) => {
+    logDebug("socket connected", {
+      socketId: socket.id,
+      userId: socket.user?.id,
+      userName: socket.user?.name,
+    });
+
     let pingTimeout;
 
     const heartbeat = () => {
