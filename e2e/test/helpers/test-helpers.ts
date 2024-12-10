@@ -602,7 +602,6 @@ export class TestHelpers {
       // 타임아웃 설정 최적화
       const NAVIGATION_TIMEOUT = 20000; // 페이지 이동 20초
       const ELEMENT_TIMEOUT = 10000; // 요소 대기 10초
-      const SOCKET_TIMEOUT = 10000; // 소켓 연결 10초
 
       // 1. 페이지 이동 - domcontentloaded만 대기
       await page.goto(`/chat?room=${encodeURIComponent(roomId)}`, {
@@ -612,13 +611,31 @@ export class TestHelpers {
 
       // 2. Socket 연결 대기 - 더 구체적인 조건 체크
       try {
-        await page.waitForFunction(
-          () => {
+        const checkSocket = async () => {
+          const isConnected = await page.evaluate(() => {
             const socket = (window as any).io;
-            return socket?.connected && socket?.id;
-          },
-          { timeout: SOCKET_TIMEOUT }
-        );
+            return socket && socket.connected;
+          });
+          return isConnected;
+        };
+
+        let attempts = 0;
+        const maxAttempts = 10;
+        const interval = 1000; // 1초마다 체크
+
+        while (attempts < maxAttempts) {
+          const connected = await checkSocket();
+          if (connected) break;
+
+          await page.waitForTimeout(interval);
+          attempts++;
+        }
+
+        if (attempts >= maxAttempts) {
+          console.warn(
+            "Socket connection warning: Connection timeout after 10 seconds"
+          );
+        }
       } catch (socketError) {
         console.warn("Socket connection warning:", socketError.message);
         // 소켓 타임아웃은 경고만 하고 계속 진행
