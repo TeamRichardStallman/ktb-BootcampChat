@@ -1,8 +1,6 @@
 import { Page } from "@playwright/test";
-import { AIService } from "../services/ai-service";
+import { AIService, AIType } from "../services/ai-service";
 import { MessageService } from "../services/message-service";
-import { TEST_PROMPTS } from "../data/ai-prompts";
-import { MESSAGE_PROMPTS } from "../data/message-prompts";
 import { TEST_USERS, AI_TEST_USERS, UserCredential } from "../data/credentials";
 
 interface UserCredentials {
@@ -17,11 +15,6 @@ interface LoginCredentials {
 }
 
 // 채팅방 찾기 및 입장을 위한 인터페이스 정의
-interface RoomInfo {
-  id: string;
-  name: string;
-  hasPassword: boolean;
-}
 
 export class TestHelpers {
   private aiService: AIService;
@@ -511,25 +504,25 @@ export class TestHelpers {
   }
 
   // 비밀번호 처리 개선
-  private async handleRoomPassword(
-    page: Page,
-    password: string,
-    timeout: number
-  ) {
-    await page.waitForSelector('input[name="password"]', {
-      state: "visible",
-      timeout,
-    });
+  // private async handleRoomPassword(
+  //   page: Page,
+  //   password: string,
+  //   timeout: number
+  // ) {
+  //   await page.waitForSelector('input[name="password"]', {
+  //     state: "visible",
+  //     timeout,
+  //   });
 
-    await Promise.all([
-      page.waitForNavigation({
-        timeout,
-        waitUntil: ["load", "domcontentloaded", "networkidle"],
-      }),
-      page.fill('input[name="password"]', password),
-      page.click('button:has-text("입장")'),
-    ]);
-  }
+  //   await Promise.all([
+  //     page.waitForNavigation({
+  //       timeout,
+  //       waitUntil: ["load", "domcontentloaded", "networkidle"],
+  //     }),
+  //     page.fill('input[name="password"]', password),
+  //     page.click('button:has-text("입장")'),
+  //   ]);
+  // }
 
   // 연결 상태 확인 메서드
   private async waitForConnection(
