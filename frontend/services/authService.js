@@ -272,6 +272,7 @@ class AuthService {
         {
           currentPassword,
           newPassword,
+          name: user.name,
         },
         {
           headers: {
