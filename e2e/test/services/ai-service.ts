@@ -16,7 +16,7 @@ interface AIResponse {
   error?: string;
 }
 
-export type AIType = "wayneAI" | "consultingAI" | "AIexpert;
+export type AIType = "wayneAI" | "consultingAI" | "AIexpert";
 export class AIService {
   private openai: OpenAI;
   private claudeApi: any; // Anthropic API 클라이언트
