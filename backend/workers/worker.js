@@ -4,9 +4,14 @@ const redisClient = require("../utils/redisClient");
 class Worker {
   constructor(options = {}) {
     console.log("Worker instance created with options:", options);
-    this.streamKey = options.streamKey || "tasks:queue";
-    this.groupName = options.groupName || "workers-group";
-    this.consumerName = options.consumerName || `worker-${process.pid}`;
+    this.streamKey =
+      process.env.REDIS_STREAM_KEY || options.streamKey || "tasks:queue";
+    this.groupName =
+      process.env.REDIS_GROUP_NAME || options.groupName || "workers-group";
+    this.consumerName =
+      process.env.REDIS_CONSUMER_NAME ||
+      options.consumerName ||
+      `worker-${process.pid}`;
     this.handlers = new Map();
     this.running = false;
   }
