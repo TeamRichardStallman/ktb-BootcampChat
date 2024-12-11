@@ -194,40 +194,18 @@ class AuthService {
       const response = await api.post("/api/auth/register", userData);
 
       if (response.data?.success && response.data?.token) {
-        const userInfo = {
-          id: response.data.user._id,
-          name: response.data.user.name,
-          email: response.data.user.email,
-          profileImage: response.data.user.profileImage,
-          token: response.data.token,
-          sessionId: response.data.sessionId,
-          lastActivity: Date.now(),
-        };
-        localStorage.setItem("user", JSON.stringify(userInfo));
-
-        // 인증 상태 변경 이벤트 발생
-        window.dispatchEvent(new Event("authStateChange"));
-
-        return userInfo;
+        return response.data; // 사용자 정보 반환
+      } else {
+        throw new Error(response.data?.message || "회원가입에 실패했습니다.");
       }
-
-      throw new Error(response.data?.message || "회원가입에 실패했습니다.");
     } catch (error) {
-      console.error("Registration error:", error);
-
-      // 상태 코드에 따라 세부적으로 처리
-      if (error.response?.status === 409) {
+      if (error.response && error.response.status === 409) {
+        console.error("중복 이메일 오류:", error.response.data.message);
         throw new Error("이미 가입된 이메일입니다.");
+      } else {
+        console.error("회원가입 오류:", error);
+        throw new Error("서버 오류가 발생했습니다. 다시 시도해주세요.");
       }
-
-      if (error.response?.status === 400) {
-        throw new Error("입력값이 올바르지 않습니다.");
-      }
-
-      // 기본 오류 처리
-      throw new Error(
-        error.response?.data?.message || "회원가입 중 오류가 발생했습니다."
-      );
     }
   }
 

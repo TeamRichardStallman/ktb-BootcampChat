@@ -88,6 +88,13 @@ const Register = () => {
       newErrors.push({ field: "name", message: "이름을 입력해주세요." });
     }
 
+    if (formData.name.trim().length < 2) {
+      newErrors.push({
+        field: "name",
+        message: "이름은 2자 이상이어야 합니다.",
+      });
+    }
+
     if (!formData.email.trim()) {
       newErrors.push({ field: "email", message: "이메일을 입력해주세요." });
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
