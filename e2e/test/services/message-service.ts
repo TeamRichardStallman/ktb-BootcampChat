@@ -48,7 +48,7 @@ export class MessageService {
       // OpenAI API 호출
       try {
         const completion = await this.openai.chat.completions.create({
-          model: process.env.MESSAGE_MODEL || "gpt-3.5-turbo-0125",
+          model: process.env.MESSAGE_MODEL || "gpt-4o-mini",
           messages: [
             {
               role: "system",

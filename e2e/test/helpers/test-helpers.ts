@@ -1,8 +1,6 @@
 import { Page } from "@playwright/test";
-import { AIService } from "../services/ai-service";
+import { AIService, AIType } from "../services/ai-service";
 import { MessageService } from "../services/message-service";
-import { TEST_PROMPTS } from "../data/ai-prompts";
-import { MESSAGE_PROMPTS } from "../data/message-prompts";
 import { TEST_USERS, AI_TEST_USERS, UserCredential } from "../data/credentials";
 
 interface UserCredentials {
@@ -17,11 +15,6 @@ interface LoginCredentials {
 }
 
 // 채팅방 찾기 및 입장을 위한 인터페이스 정의
-interface RoomInfo {
-  id: string;
-  name: string;
-  hasPassword: boolean;
-}
 
 export class TestHelpers {
   private aiService: AIService;
@@ -32,7 +25,7 @@ export class TestHelpers {
     const apiKey = process.env.OPENAI_API_KEY || "";
     this.aiService = new AIService({
       apiKey,
-      model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo-0125"',
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     });
     this.messageService = new MessageService();
   }
@@ -166,24 +159,25 @@ export class TestHelpers {
       await page.goto("/chat-rooms");
       await page.waitForLoadState("networkidle");
 
-      let previousHeight = 0;
-      let maxScrollAttempts = 3;
-      let scrollAttempts = 0;
-      let allFoundRooms: string[] = [];
+      const tableSelector = "table tbody tr";
+      const roomNameSelector = "span._3U8yo._32yag.font-medium";
+      const containerSelector = ".chat-rooms-table";
 
-      console.log("Finding rooms with prefix:", prefix);
-
-      // 채팅방 테이블이 로드될 때까지 대기
-      await page.waitForLoadState("networkidle");
-      await page.waitForSelector("table tbody tr", {
+      // 테이블 로드 대기
+      await page.waitForSelector(tableSelector, {
         state: "visible",
         timeout: 30000,
       });
 
-      while (scrollAttempts < maxScrollAttempts) {
-        // 현재 화면에서 보이는 모든 채팅방 이름 가져오기
+      const allFoundRooms = new Set<string>();
+      let previousRoomCount = 0;
+      let noNewRoomsCount = 0;
+      const maxNoNewRoomsAttempts = 3;
+
+      while (noNewRoomsCount < maxNoNewRoomsAttempts) {
+        // 현재 화면의 방 목록 가져오기
         const currentRooms = await page.$$eval(
-          "span._3U8yo._32yag.font-medium",
+          roomNameSelector,
           (elements, searchPrefix) => {
             return elements
               .map((el) => el.textContent || "")
@@ -192,48 +186,65 @@ export class TestHelpers {
           prefix
         );
 
-        // 새로 발견된 방들을 중복 제거하여 추가
-        for (const roomName of currentRooms) {
-          if (!allFoundRooms.includes(roomName)) {
-            console.log(`Found room: ${roomName}`);
-            allFoundRooms.push(roomName);
-          }
+        // 새로운 방 추가
+        currentRooms.forEach((room) => allFoundRooms.add(room));
+
+        // 새로운 방이 발견되지 않았는지 확인
+        if (allFoundRooms.size === previousRoomCount) {
+          noNewRoomsCount++;
+          console.log(
+            `No new rooms found. Attempt ${noNewRoomsCount}/${maxNoNewRoomsAttempts}`
+          );
+        } else {
+          noNewRoomsCount = 0;
+          console.log(`Found ${allFoundRooms.size} total rooms`);
         }
 
-        // 현재 스크롤 높이 확인
-        const currentHeight = await page.evaluate(() => {
-          const container = document.querySelector(".chat-rooms-table");
-          return container?.scrollHeight || 0;
-        });
+        previousRoomCount = allFoundRooms.size;
 
-        // 더 이상 스크롤이 되지 않으면 종료
-        if (currentHeight === previousHeight) {
+        // 스크롤 수행
+        try {
+          // 현재 요소 수 확인
+          const currentElements = await page.$$(roomNameSelector);
+          const previousElementCount = currentElements.length;
+
+          // 스크롤 수행
+          await page.evaluate((selector) => {
+            const container = document.querySelector(selector);
+            if (container) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }, containerSelector);
+
+          // 새로운 컨텐츠 로드 대기
+          try {
+            await Promise.race([
+              page.waitForTimeout(1000),
+              page.waitForFunction(
+                `(selector, prevCount) => document.querySelectorAll(selector).length > prevCount`,
+                {
+                  timeout: 2000,
+                }
+              ),
+            ]);
+          } catch (timeoutError) {
+            // 타임아웃은 무시하고 계속 진행
+            console.log("Timeout waiting for new content");
+          }
+
+          // 스크롤 후 잠시 대기 (새로운 컨텐츠 렌더링 대기)
+          await page.waitForTimeout(500);
+        } catch (scrollError) {
+          console.warn("Scroll operation warning:", scrollError);
           break;
         }
-
-        // 스크롤 다운
-        await page.evaluate(() => {
-          const container = document.querySelector(".chat-rooms-table");
-          if (container) {
-            container.scrollTop = container.scrollHeight;
-          }
-        });
-
-        // 새로운 컨텐츠 로딩 대기
-        await page.waitForTimeout(1000);
-
-        previousHeight = currentHeight;
-        scrollAttempts++;
-
-        console.log(
-          `Scroll attempt ${scrollAttempts}/${maxScrollAttempts}: Found ${allFoundRooms.length} rooms`
-        );
       }
 
       // 발견된 방들 중에서 랜덤하게 하나 선택
-      if (allFoundRooms.length > 0) {
+      if (allFoundRooms.size > 0) {
+        const roomsArray = Array.from(allFoundRooms);
         const selectedRoom =
-          allFoundRooms[Math.floor(Math.random() * allFoundRooms.length)];
+          roomsArray[Math.floor(Math.random() * roomsArray.length)];
         console.log(`Selected room: ${selectedRoom}`);
         return selectedRoom;
       }
@@ -241,11 +252,19 @@ export class TestHelpers {
       console.log("No rooms found with prefix:", prefix);
       return null;
     } catch (error) {
-      console.error("Finding similar room failed:", error);
-      await page.screenshot({
-        path: `test-results/find-room-error-${Date.now()}.png`,
-        fullPage: true,
-      });
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error("Finding similar room failed:", errorMessage);
+
+      try {
+        await page.screenshot({
+          path: `test-results/find-room-error-${Date.now()}.png`,
+          fullPage: true,
+        });
+      } catch (screenshotError) {
+        console.error("Failed to save error screenshot:", screenshotError);
+      }
+
       return null;
     }
   }
@@ -511,25 +530,25 @@ export class TestHelpers {
   }
 
   // 비밀번호 처리 개선
-  private async handleRoomPassword(
-    page: Page,
-    password: string,
-    timeout: number
-  ) {
-    await page.waitForSelector('input[name="password"]', {
-      state: "visible",
-      timeout,
-    });
+  // private async handleRoomPassword(
+  //   page: Page,
+  //   password: string,
+  //   timeout: number
+  // ) {
+  //   await page.waitForSelector('input[name="password"]', {
+  //     state: "visible",
+  //     timeout,
+  //   });
 
-    await Promise.all([
-      page.waitForNavigation({
-        timeout,
-        waitUntil: ["load", "domcontentloaded", "networkidle"],
-      }),
-      page.fill('input[name="password"]', password),
-      page.click('button:has-text("입장")'),
-    ]);
-  }
+  //   await Promise.all([
+  //     page.waitForNavigation({
+  //       timeout,
+  //       waitUntil: ["load", "domcontentloaded", "networkidle"],
+  //     }),
+  //     page.fill('input[name="password"]', password),
+  //     page.click('button:has-text("입장")'),
+  //   ]);
+  // }
 
   // 연결 상태 확인 메서드
   private async waitForConnection(
@@ -580,29 +599,49 @@ export class TestHelpers {
         return;
       }
 
-      // 로드 타임아웃 설정
-      const LOAD_TIMEOUT = 60000;
+      // 타임아웃 설정 최적화
+      const NAVIGATION_TIMEOUT = 20000; // 페이지 이동 20초
+      const ELEMENT_TIMEOUT = 10000; // 요소 대기 10초
 
-      // 1. 페이지 로드
+      // 1. 페이지 이동 - domcontentloaded만 대기
       await page.goto(`/chat?room=${encodeURIComponent(roomId)}`, {
-        waitUntil: "networkidle",
-        timeout: LOAD_TIMEOUT,
+        waitUntil: "domcontentloaded",
+        timeout: NAVIGATION_TIMEOUT,
       });
 
-      // 2. Socket 연결 대기
-      await page
-        .waitForFunction(
-          () => {
+      // 2. Socket 연결 대기 - 더 구체적인 조건 체크
+      try {
+        const checkSocket = async () => {
+          const isConnected = await page.evaluate(() => {
             const socket = (window as any).io;
             return socket && socket.connected;
-          },
-          { timeout: LOAD_TIMEOUT }
-        )
-        .catch(() => {
-          console.warn("Socket connection check timed out");
-        });
+          });
+          return isConnected;
+        };
 
-      // 3. 비밀번호 처리
+        let attempts = 0;
+        const maxAttempts = 10;
+        const interval = 1000; // 1초마다 체크
+
+        while (attempts < maxAttempts) {
+          const connected = await checkSocket();
+          if (connected) break;
+
+          await page.waitForTimeout(interval);
+          attempts++;
+        }
+
+        if (attempts >= maxAttempts) {
+          console.warn(
+            "Socket connection warning: Connection timeout after 10 seconds"
+          );
+        }
+      } catch (socketError) {
+        console.warn("Socket connection warning:", socketError.message);
+        // 소켓 타임아웃은 경고만 하고 계속 진행
+      }
+
+      // 3. 비밀번호 처리 - 빠른 체크
       const passwordInput = await page.locator('input[name="password"]');
       const needsPassword = await passwordInput.isVisible().catch(() => false);
 
@@ -613,56 +652,28 @@ export class TestHelpers {
 
         await passwordInput.fill(password);
         await page.click('button:has-text("입장")');
-
-        // 비밀번호 입력 후 페이지 로드 대기
-        await page.waitForLoadState("networkidle", { timeout: LOAD_TIMEOUT });
       }
 
-      // 4. UI 로드 대기
-      const requiredElements = [
-        {
-          selector: ".chat-room-title",
-          description: "채팅방 제목",
-        },
-        {
-          selector: ".chat-messages",
-          description: "메시지 영역",
-        },
-        {
-          selector: ".chat-input-textarea:not([disabled])",
-          description: "채팅 입력창",
-        },
-      ];
+      // 4. 핵심 UI 요소 순차적 대기
+      // 제목이 먼저 나타나야 함
+      await page.waitForSelector(".chat-room-title", {
+        state: "visible",
+        timeout: ELEMENT_TIMEOUT,
+      });
 
-      // 모든 필수 요소가 로드될 때까지 대기
-      await Promise.all(
-        requiredElements.map(async ({ selector, description }) => {
-          try {
-            await page.waitForSelector(selector, {
-              state: "visible",
-              timeout: LOAD_TIMEOUT,
-            });
-            console.log(`${description} 로드됨`);
-          } catch (error) {
-            throw new Error(`${description} 로드 실패: ${error.message}`);
-          }
-        })
-      );
+      // 메시지 영역과 입력창은 병렬로 체크
+      await Promise.all([
+        page.waitForSelector(".chat-messages", {
+          state: "visible",
+          timeout: ELEMENT_TIMEOUT,
+        }),
+        page.waitForSelector(".chat-input-textarea:not([disabled])", {
+          state: "visible",
+          timeout: ELEMENT_TIMEOUT,
+        }),
+      ]);
 
-      // 5. 연결 상태 최종 확인
-      // const isConnected = await page
-      //   .waitForSelector('.status-indicator.connected', {
-      //     state: 'visible',
-      //     timeout: LOAD_TIMEOUT
-      //   })
-      //   .then(() => true)
-      //   .catch(() => false);
-
-      // if (!isConnected) {
-      //   throw new Error('채팅 서버 연결 실패');
-      // }
-
-      // 6. 최종 URL 검증
+      // 5. 최종 URL 검증
       const finalUrl = page.url();
       const finalRoomId = new URLSearchParams(new URL(finalUrl).search).get(
         "room"
@@ -673,6 +684,19 @@ export class TestHelpers {
           `채팅방 입장 실패: 예상된 방 ID ${roomId}, 실제 방 ID ${finalRoomId}`
         );
       }
+
+      // 추가: 빠른 초기 메시지 로드 확인
+      const hasInitialMessages = await page
+        .waitForSelector(".chat-message", {
+          state: "visible",
+          timeout: 5000,
+        })
+        .then(() => true)
+        .catch(() => false);
+
+      if (!hasInitialMessages) {
+        console.warn("초기 메시지 로드 지연 감지");
+      }
     } catch (error) {
       console.error("URL 파라미터로 채팅방 입장 실패:", {
         error,
@@ -681,17 +705,16 @@ export class TestHelpers {
         pageState: await this.getPageState(page),
       });
 
-      // 스크린샷 촬영 시도
-      try {
-        if (!page.isClosed()) {
+      if (!page.isClosed()) {
+        try {
           const timestamp = Date.now();
           await page.screenshot({
             path: `test-results/room-join-url-error-${timestamp}.png`,
             fullPage: true,
           });
+        } catch (screenshotError) {
+          console.error("스크린샷 촬영 실패:", screenshotError);
         }
-      } catch (screenshotError) {
-        console.error("스크린샷 촬영 실패:", screenshotError);
       }
 
       throw new Error(

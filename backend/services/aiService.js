@@ -51,7 +51,7 @@ class AIService {
       const response = await this.openaiClient.post(
         "/chat/completions",
         {
-          model: "gpt-3.5-turbo-0125",
+          model: "gpt-4o-mini",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message },
