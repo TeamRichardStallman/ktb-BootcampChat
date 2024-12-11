@@ -95,37 +95,47 @@ start_services() {
     echo "Redis가 이미 실행 중입니다."
   fi
   
-  # Worker 시작 부분 수정
+  # Worker 시작 부분 수정 (start_services 함수 내부)
   if ! pm2 list | grep -q "$PM2_WORKER_NAME"; then
-    echo "Worker 프로세스를 시작합니다... (모드: $MODE)"
-    cd "$BACKEND_DIR"
-    echo "현재 디렉토리: $(pwd)"
-    if [ -f "workers/worker.js" ]; then
-      echo "worker.js 파일을 찾았습니다."
-      NODE_ENV=$MODE pm2 start workers/worker.js --name "$PM2_WORKER_NAME" \
-        --log "$LOG_DIR/worker.log" \
-        --error "$LOG_DIR/worker-error.log" \
-        -i 1  # cluster mode with 2 instances
-      
-      # Worker 시작 확인을 위해 대기
-      echo "Worker 프로세스 시작을 확인하는 중..."
-      sleep 3  # 3초 대기
-      
-      # Worker 상태 확인
-      if pm2 list | grep -q "$PM2_WORKER_NAME"; then
-        echo "Worker 프로세스가 성공적으로 시작되었습니다."
-        pm2 describe "$PM2_WORKER_NAME"
+      echo "Worker 프로세스를 시작합니다... (모드: $MODE)"
+      cd "$BACKEND_DIR"
+      echo "현재 디렉토리: $(pwd)"
+      if [ -f "workers/worker.js" ]; then
+        echo "worker.js 파일을 찾았습니다."
+        # 환경변수 추가
+        NODE_ENV=$MODE \
+        REDIS_STREAM_KEY=tasks:queue \
+        REDIS_GROUP_NAME=workers-group \
+        REDIS_CONSUMER_NAME="worker-${HOSTNAME}-${RANDOM}" \
+        AWS_BUCKET_NAME=$AWS_BUCKET_NAME \
+        AWS_REGION=$AWS_REGION \
+        AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+        AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+        AWS_S3_ENDPOINT=$AWS_S3_ENDPOINT \
+        pm2 start workers/worker.js --name "$PM2_WORKER_NAME" \
+          --log "$LOG_DIR/worker.log" \
+          --error "$LOG_DIR/worker-error.log" \
+          -i 1
+
+        # Worker 시작 확인을 위해 대기
+        echo "Worker 프로세스 시작을 확인하는 중..."
+        sleep 3
+        
+        # Worker 상태 확인
+        if pm2 list | grep -q "$PM2_WORKER_NAME"; then
+          echo "Worker 프로세스가 성공적으로 시작되었습니다."
+          pm2 describe "$PM2_WORKER_NAME"
+        else
+          echo "Worker 프로세스 시작 실패"
+        fi
       else
-        echo "Worker 프로세스 시작 실패"
+        echo "Error: workers/worker.js 파일을 찾을 수 없습니다."
+        ls -la workers/
       fi
-    else
-      echo "Error: workers/worker.js 파일을 찾을 수 없습니다."
-      ls -la workers/
-    fi
-    cd ..
+      cd ..
   else
-    echo "Worker 프로세스가 이미 실행 중입니다."
-    pm2 describe "$PM2_WORKER_NAME"
+      echo "Worker 프로세스가 이미 실행 중입니다."
+      pm2 describe "$PM2_WORKER_NAME"
   fi
 
   # 백엔드 시작
