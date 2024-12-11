@@ -213,6 +213,12 @@ export const useMessageHandling = (
           email: "ai@consulting.ai",
           isAI: true,
         },
+        {
+          _id: "AIexpert",
+          name: "AIexpert",
+          email: "ai@aiexpert.ai",
+          isAI: true,
+        },
         ...room.participants,
       ];
 
