@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 실행할 서비스 목록
-services=("MongoDB" "Redis" "Backend" "Frontend")
+services=("MongoDB" "Redis" "Backend" "Frontend" "Worker")
 
 # 백엔드 및 프론트엔드 경로 설정
 BACKEND_DIR="./backend"
@@ -18,6 +18,7 @@ PM2_MONGODB_NAME="mongo-server"
 PM2_REDIS_NAME="redis-server"
 PM2_BACKEND_NAME="backend-server"
 PM2_FRONTEND_NAME="frontend-server"
+PM2_WORKER_NAME="task-workers"
 
 # 명령어 인자 확인
 if [ $# -eq 0 ] || [ $# -gt 2 ]; then
@@ -93,6 +94,39 @@ start_services() {
   else
     echo "Redis가 이미 실행 중입니다."
   fi
+  
+  # Worker 시작 부분 수정
+  if ! pm2 list | grep -q "$PM2_WORKER_NAME"; then
+    echo "Worker 프로세스를 시작합니다... (모드: $MODE)"
+    cd "$BACKEND_DIR"
+    echo "현재 디렉토리: $(pwd)"
+    if [ -f "workers/worker.js" ]; then
+      echo "worker.js 파일을 찾았습니다."
+      NODE_ENV=$MODE pm2 start workers/worker.js --name "$PM2_WORKER_NAME" \
+        --log "$LOG_DIR/worker.log" \
+        --error "$LOG_DIR/worker-error.log" \
+        -i 1  # cluster mode with 2 instances
+      
+      # Worker 시작 확인을 위해 대기
+      echo "Worker 프로세스 시작을 확인하는 중..."
+      sleep 3  # 3초 대기
+      
+      # Worker 상태 확인
+      if pm2 list | grep -q "$PM2_WORKER_NAME"; then
+        echo "Worker 프로세스가 성공적으로 시작되었습니다."
+        pm2 describe "$PM2_WORKER_NAME"
+      else
+        echo "Worker 프로세스 시작 실패"
+      fi
+    else
+      echo "Error: workers/worker.js 파일을 찾을 수 없습니다."
+      ls -la workers/
+    fi
+    cd ..
+  else
+    echo "Worker 프로세스가 이미 실행 중입니다."
+    pm2 describe "$PM2_WORKER_NAME"
+  fi
 
   # 백엔드 시작
   if ! pm2 list | grep -q "$PM2_BACKEND_NAME"; then
@@ -137,7 +171,7 @@ start_services() {
 stop_services() {
   echo "서비스를 중지합니다..."
 
-  for service in "$PM2_FRONTEND_NAME" "$PM2_BACKEND_NAME" "$PM2_REDIS_NAME" "$PM2_MONGODB_NAME"; do
+  for service in "$PM2_FRONTEND_NAME" "$PM2_BACKEND_NAME" "$PM2_REDIS_NAME" "$PM2_MONGODB_NAME" "$PM2_WORKER_NAME"; do
     if pm2 list | grep -q "$service"; then
       echo "$service 중지 중..."
       pm2 stop "$service"
@@ -157,6 +191,7 @@ restart_services() {
   
   cd "$BACKEND_DIR"
   NODE_ENV=$MODE pm2 restart "$PM2_BACKEND_NAME"
+  NODE_ENV=$MODE pm2 restart "$PM2_WORKER_NAME"  # Worker 재시작 추가
   cd ..
   
   cd "$FRONTEND_DIR"
@@ -182,6 +217,7 @@ status_services() {
   echo "Redis (6379):" $(lsof -i:6379 | grep LISTEN || echo "미사용")
   echo "Backend (5000):" $(lsof -i:5000 | grep LISTEN || echo "미사용")
   echo "Frontend (3000):" $(lsof -i:3000 | grep LISTEN || echo "미사용")
+  echo "Workers: $(pm2 describe $PM2_WORKER_NAME 2>/dev/null | grep 'status\|cpu\|memory' || echo '미실행')"
 }
 
 # 명령어 처리

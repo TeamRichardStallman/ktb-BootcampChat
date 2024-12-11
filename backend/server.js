@@ -12,6 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 8080;
 
+const redisClient = require("./utils/redisClient");
 // trust proxy 설정 추가
 app.set("trust proxy", 1);
 
@@ -100,17 +101,48 @@ app.use((err, req, res, next) => {
 // 서버 시작
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log("MongoDB Connected");
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log("Environment:", process.env.NODE_ENV);
-      console.log("API Base URL:", `http://0.0.0.0:${PORT}/api`);
-    });
+
+    try {
+      await redisClient.connect();
+      console.log("Redis Connected");
+
+      server.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on port ${PORT}`);
+        console.log("Environment:", process.env.NODE_ENV);
+        console.log("API Base URL:", `http://0.0.0.0:${PORT}/api`);
+      });
+    } catch (error) {
+      console.error("Redis connection error:", error);
+      process.exit(1);
+    }
   })
   .catch((err) => {
     console.error("Server startup error:", err);
     process.exit(1);
   });
+
+// 종료 핸들러 추가
+const gracefulShutdown = async () => {
+  console.log("Shutting down gracefully...");
+  try {
+    await redisClient.quit();
+    await mongoose.connection.close();
+    server.close(() => {
+      console.log("Server closed");
+      process.exit(0);
+    });
+  } catch (err) {
+    console.error("Shutdown error:", err);
+    process.exit(1);
+  }
+};
+
+// 종료 시그널 처리
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
+
+app.set("redisClient", redisClient);
 
 module.exports = { app, server };
