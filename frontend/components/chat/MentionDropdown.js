@@ -77,7 +77,13 @@ const MentionDropdown = ({
 
   const getAvatarContent = useCallback((user) => {
     if (user.isAI) {
-      return user.name === "wayneAI" ? "W" : "C";
+      return user.name === "wayneAI"
+        ? "W"
+        : user.name === "consultingAI"
+        ? "C"
+        : user.name === "AIexpert"
+        ? "E"
+        : user.name.charAt(0).toUpperCase(); // 매칭되지 않는 경우 첫 글자 반환
     }
     return user.name.charAt(0).toUpperCase();
   }, []);
@@ -126,11 +132,13 @@ const MentionDropdown = ({
             <div className="mention-info">
               <span className="mention-name">
                 {user.isAI
-                  ? {
-                      wayneAI: "Wayne AI",
-                      consultingAI: "Consulting AI",
-                      AIexpert: "AI 척척박사",
-                    }[user.name] || "Unknown AI"
+                  ? user.name === "wayneAI"
+                    ? "Wayne AI"
+                    : user.name === "consultingAI"
+                    ? "Consulting AI"
+                    : user.name === "AIexpert"
+                    ? "AI 척척박사"
+                    : user.name
                   : user.name}
               </span>
               {renderUserBadge(user)}
