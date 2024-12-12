@@ -129,12 +129,12 @@ exports.updateProfile = async (req, res) => {
   try {
     const { name, currentPassword, newPassword } = req.body;
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "이름을 입력해주세요.",
-      });
-    }
+    // if (!name || name.trim().length === 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "이름을 입력해주세요.",
+    //   });
+    // }
 
     const user = await User.findById(req.user.id).select("+password");
     if (!user) {
@@ -144,9 +144,17 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
+    console.log("사용자 현재 데이터:", user);
+
     // 비밀번호 변경 처리
     if (currentPassword && newPassword) {
+      console.log("입력된 현재 비밀번호:", currentPassword);
+      console.log("입력된 새 비밀번호:", newPassword);
+
+      // 현재 비밀번호 검증
       const isMatch = await bcrypt.compare(currentPassword, user.password);
+      console.log("현재 비밀번호와 저장된 비밀번호 비교 결과:", isMatch);
+
       if (!isMatch) {
         return res.status(401).json({
           success: false,
@@ -161,13 +169,24 @@ exports.updateProfile = async (req, res) => {
         });
       }
 
+      // 비밀번호 암호화
+      console.log("비밀번호 암호화 중...");
       const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(newPassword, salt);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      console.log("암호화된 비밀번호:", hashedPassword);
+
+      user.password = hashedPassword;
+      console.log("사용자 객체에 새 비밀번호 저장:", user.password);
     }
 
     // 이름 변경 처리
     user.name = name.trim();
     await user.save();
+
+    console.log("저장 후 사용자 데이터베이스 상태 확인:");
+    const updatedUser = await User.findById(req.user.id);
+    console.log(updatedUser);
 
     res.json({
       success: true,
