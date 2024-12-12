@@ -1,19 +1,29 @@
-const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const fs = require('fs').promises;
+const s3Client = require('../config/aws');
 
-exports.processFileForRAG = async (filePath) => {
-  let textContent = '';
+exports.uploadToS3 = async (filePath, filename) => {
+  try {
+    if (!filePath || !filename) {
+      throw new Error('Invalid file path or filename');
+    }
 
-  // PDF 파일 처리
-  if (filePath.endsWith('.pdf')) {
-    const dataBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(dataBuffer);
-    textContent = pdfData.text;
-  } else {
-    // 텍스트 파일 처리
-    textContent = fs.readFileSync(filePath, 'utf-8');
+    const fileData = await fs.readFile(filePath);
+    const bucketName = process.env.AWS_S3_BUCKET_NAME;
+
+    const uploadParams = {
+      Bucket: bucketName,
+      Key: `uploads/${filename}`,
+      Body: fileData,
+    };
+
+    console.log('Uploading to S3 with params:', uploadParams);
+
+    await s3Client.send(new PutObjectCommand(uploadParams));
+    await fs.unlink(filePath); // 로컬 파일 삭제
+    return `uploads/${filename}`;
+  } catch (error) {
+    console.error('S3 Upload Error:', error);
+    throw new Error('S3 업로드 실패');
   }
-
-  // 텍스트를 벡터화하여 벡터 DB에 저장
-  await vectorDB.storeDocument(textContent);
 };

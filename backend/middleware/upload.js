@@ -46,33 +46,20 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    try {
-      // 원본 파일명을 버퍼로 변환하여 UTF-8로 디코딩
-      const originalname = Buffer.from(file.originalname, 'binary').toString('utf8');
-      
-      // 원본 파일명을 req 객체에 저장
-      req.originalFileName = originalname;
-
-      // 파일 확장자 추출
-      const ext = path.extname(originalname).toLowerCase();
-      
-      // 안전한 파일명 생성 (타임스탬프 + 랜덤 문자열 + 확장자)
-      const timestamp = Date.now();
-      const randomString = crypto.randomBytes(8).toString('hex');
-      const safeFilename = `${timestamp}_${randomString}${ext}`;
-
-      // 파일 확장자 검증
-      const allowedExtensions = Object.values(ALLOWED_TYPES).flat();
-      if (!allowedExtensions.includes(ext)) {
-        return cb(new Error('지원하지 않는 파일 확장자입니다.'));
-      }
-
-      cb(null, safeFilename);
-    } catch (error) {
-      console.error('Filename processing error:', error);
-      cb(new Error('파일명 처리 중 오류가 발생했습니다.'));
+    if (!file.originalname) {
+      console.error('No original filename provided:', file);
+      cb(new Error('Invalid file name'));
     }
-  }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    const timestamp = Date.now();
+    const randomString = crypto.randomBytes(8).toString('hex');
+    const safeFilename = `${timestamp}_${randomString}${ext}`;
+
+    console.log('Generated safe filename:', safeFilename);
+
+    cb(null, safeFilename);
+  },
 });
 
 const getFileType = (mimetype) => {

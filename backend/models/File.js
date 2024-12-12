@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const FileSchema = new mongoose.Schema({
+  path: {
+    type: String,
+    required: true,
+    index: true,
+  },
   filename: { 
     type: String, 
     required: true,
@@ -55,10 +60,6 @@ const FileSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
     index: true
-  },
-  path: { 
-    type: String,
-    required: true
   },
   uploadDate: { 
     type: Date, 
