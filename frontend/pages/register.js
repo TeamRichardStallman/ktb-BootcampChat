@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/router";
 import { Card } from "@goorm-dev/vapor-core";
 import {
@@ -37,6 +37,8 @@ const Register = () => {
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(10); // 카운트다운 상태 추가
+  const timerRef = useRef(null); // 타이머 ID 추적
   const router = useRouter();
   const refAnimationInstance = useRef(null);
 
@@ -149,14 +151,21 @@ const Register = () => {
       setShowSuccessModal(true);
       fireConfetti();
 
-      // 성공 후 이동
-      setTimeout(() => {
-        router.push("/chat-rooms");
-      }, 10000);
+      // 카운트다운 시작
+      setTimeLeft(10); // 초기화
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearTimeout(timerRef.current);
+            router.push("/chat-rooms");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (error) {
       console.error("Registration error:", error);
 
-      // 에러 메시지를 상태로 설정하여 UI에 표시
       if (error.response?.status === 409) {
         setErrors([{ message: "이미 가입된 이메일입니다." }]);
       } else if (error.message) {
@@ -172,6 +181,20 @@ const Register = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  // 모달 닫을 때 타이머 초기화
+  const handleCloseModal = () => {
+    setShowSuccessModal(false);
+    clearTimer();
+    setTimeLeft(10); // 초기화
   };
 
   const getFieldError = (fieldName) => {
@@ -324,12 +347,12 @@ const Register = () => {
 
       <Modal
         isOpen={showSuccessModal}
-        toggle={() => setShowSuccessModal(false)}
+        toggle={handleCloseModal}
         type="center"
         size="md"
         direction="vertical"
       >
-        <ModalHeader toggle={() => setShowSuccessModal(false)}>
+        <ModalHeader toggle={handleCloseModal}>
           <div className="flex items-center gap-3">
             <PartyPopper className="w-6 h-6 text-primary mr-3" />
             <Text as="span" typography="heading4">
@@ -343,8 +366,7 @@ const Register = () => {
             <Text as="h4" typography="heading4" className="text-success">
               회원가입을 축하합니다!
             </Text>
-            <br />
-            <Text size="md">10초 후 채팅방 목록으로 이동합니다.</Text>
+            <Text size="md">{timeLeft}초 후 채팅방 목록으로 이동합니다.</Text>
           </div>
         </ModalBody>
 
