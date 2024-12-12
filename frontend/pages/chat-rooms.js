@@ -779,7 +779,14 @@ function ChatRoomsComponent() {
           </ModalBody>
 
           <ModalFooter>
-            <div className="flex gap-2 w-full">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "end",
+                gap: "0.5rem",
+                width: "100%",
+              }}
+            >
               <Button
                 variant="secondary"
                 size="lg"

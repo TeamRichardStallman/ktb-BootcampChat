@@ -126,6 +126,15 @@ axiosInstance.interceptors.response.use(
     const config = error.config || {};
     config.retryCount = config.retryCount || 0;
 
+    // 채팅방 입장 API의 401/403 에러는 무시
+    if (
+      error.config.url.includes("/rooms/") &&
+      error.config.url.includes("/join") &&
+      (error.response?.status === 401 || error.response?.status === 403)
+    ) {
+      return Promise.reject(error);
+    }
+
     // 요청이 취소된 경우
     if (axios.isCancel(error)) {
       return Promise.reject(error);
