@@ -6,17 +6,20 @@ tree:
 # Start PM2
 start:
 	@./run.sh start
+	@pm2 save
 
 # Stop PM2
 stop:
 	@./run.sh stop
 	@pm2 cleardump
+	@pm2 save
 
 # Restart PM2
 restart:
 	@./run.sh stop
 	@pm2 cleardump
 	@./run.sh start
+	@pm2 save
 
 # Delete volume
 clean-db:
