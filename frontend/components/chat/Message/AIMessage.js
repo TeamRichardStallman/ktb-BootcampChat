@@ -77,12 +77,11 @@ const AIMessage = ({
   return (
     <div className="message-group yours">
       <div className="message-sender-info">
-        <PersistentAvatar user={aiUser} size="lg" showInitials={true} />
+        <PersistentAvatar user={aiUser} size="xl" showInitials={true} />
         <span className="sender-name">{aiUser.name}</span>
       </div>
       <div className="message-bubble message-ai last relative group">
         <div className="message-content">{renderContent()}</div>
-
         {!isStreaming && (
           <div className="message-footer">
             <div className="message-time mr-3">{formattedTime}</div>
