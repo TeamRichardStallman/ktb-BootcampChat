@@ -17,40 +17,46 @@ class RedisClient {
     }
 
     try {
-      console.log('Connecting to Redis...');
+      console.log('Connecting to Redis Cluster...');
 
-      this.client = Redis.createClient({
-        url: `redis://${redisHost}:${redisPort}`,
-        socket: {
-          host: redisHost,
-          port: redisPort,
-          reconnectStrategy: (retries) => {
-            if (retries > this.maxRetries) {
-              return null;
+      this.client = Redis.createCluster({
+        rootNodes: [
+          { url: 'redis://10.0.131.217:6379' },
+          { url: 'redis://10.0.128.53:6379' },
+          { url: 'redis://10.0.152.254:6379' }
+        ],
+        defaults: {
+          socket: {
+            reconnectStrategy: (retries) => {
+              if (retries > this.maxRetries) {
+                return null;
+              }
+              return Math.min(retries * 50, 2000);
             }
-            return Math.min(retries * 50, 2000);
           }
         }
       });
 
       this.client.on('connect', () => {
-        console.log('Redis Client Connected');
+        console.log('Redis Cluster Connected');
         this.isConnected = true;
         this.connectionAttempts = 0;
       });
 
       this.client.on('error', (err) => {
-        console.error('Redis Client Error:', err);
+        console.error('Redis Cluster Error:', err);
         this.isConnected = false;
       });
 
       await this.client.connect();
+      
+      console.log('Redis Cluster connection established');
+      this.isConnected = true;
       return this.client;
 
     } catch (error) {
-      console.error('Redis connection error:', error);
+      console.error('Redis Cluster connection error:', error);
       this.isConnected = false;
-      this.retryConnection();
       throw error;
     }
   }
