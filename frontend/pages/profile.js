@@ -156,17 +156,43 @@ const Profile = () => {
       // 이름 변경 요청
       if (formData.name !== currentUser.name) {
         console.log("Updating name...");
-        await authService.updateProfile({ name: formData.name });
+        alert(
+          "pass: " +
+            formData.newPassword +
+            ", current:" +
+            formData.currentPassword
+        );
+        if (formData.currentPassword && formData.newPassword) {
+          await authService.updateProfile({
+            name: formData.name,
+            currentPassword: formData.currentPassword,
+            newPassword: formData.newPassword,
+          });
+        } else {
+          await authService.updateProfile({ name: formData.name });
+        }
+      } else {
+        console.log("Updating password...");
+        if (formData.currentPassword && formData.newPassword) {
+          await authService.updateProfile({
+            name: formData.name,
+            currentPassword: formData.currentPassword,
+            newPassword: formData.newPassword,
+          });
+        } else {
+          setSuccess("변경사항이 없습니다.");
+          return;
+        }
       }
 
       // 비밀번호 변경 요청
-      if (formData.currentPassword && formData.newPassword) {
-        console.log("Changing password...");
-        await authService.changePassword(
-          formData.currentPassword,
-          formData.newPassword
-        );
-      }
+      // if (formData.currentPassword && formData.newPassword) {
+      //   console.log("Changing password...");
+      //   await authService.changePassword(
+      //     formData.currentPassword,
+      //     formData.newPassword
+      //   );
+      // }
 
       // 성공 메시지 설정
       setSuccess("프로필이 성공적으로 업데이트되었습니다.");

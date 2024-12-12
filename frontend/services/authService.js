@@ -211,11 +211,12 @@ class AuthService {
 
   async updateProfile(data) {
     try {
+      console.log("updateProfile start...:", JSON.stringify(data));
       const user = this.getCurrentUser();
       if (!user?.token) {
         throw new Error("인증 정보가 없습니다.");
       }
-
+      console.log(" - axios request start...:", JSON.stringify(data));
       const response = await axios.put(`${API_URL}/api/users/profile`, data, {
         headers: {
           "Content-Type": "application/json",
@@ -225,6 +226,10 @@ class AuthService {
       });
 
       if (response.data?.success) {
+        console.log(
+          "api/users/profile successed...:",
+          JSON.stringify(response.data)
+        );
         // 현재 사용자 정보 업데이트
         const updatedUser = {
           ...user,
@@ -259,7 +264,7 @@ class AuthService {
       throw this._handleError(error);
     }
   }
-
+  // 사용 안함
   async changePassword(currentPassword, newPassword) {
     try {
       const user = this.getCurrentUser();
@@ -270,9 +275,9 @@ class AuthService {
       const response = await axios.put(
         `${API_URL}/api/users/profile`,
         {
+          name: user.name,
           currentPassword,
           newPassword,
-          name: user.name,
         },
         {
           headers: {
@@ -323,6 +328,12 @@ class AuthService {
       const SESSION_TIMEOUT = 2 * 60 * 60 * 1000;
 
       if (Date.now() - user.lastActivity > SESSION_TIMEOUT) {
+        alert(
+          "잘못된 세션 만료:" +
+            user.lastActivity +
+            ", SESSION_TIMEOUT:" +
+            SESSION_TIMEOUT
+        );
         this.logout();
         return null;
       }
