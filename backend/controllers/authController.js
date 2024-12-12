@@ -18,6 +18,13 @@ const authController = {
         });
       }
 
+      if (name.trim().length < 2) {
+        return res.status(400).json({
+          success: false,
+          message: "이름은 2자 이상이어야 합니다.",
+        });
+      }
+
       if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
         return res.status(400).json({
           success: false,
