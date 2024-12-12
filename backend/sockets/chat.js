@@ -29,38 +29,43 @@ module.exports = function (io) {
     });
   };
 
-  const withTimeout = (promise, timeout, timeoutMessage) => {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(timeoutMessage)), timeout)
-      ),
-    ]);
-  };
-
   // 메시지 일괄 로드 함수 개선
   const loadMessages = async (socket, roomId, before, limit = BATCH_SIZE) => {
-    try {
-      const query = { room: roomId };
-      if (before) query.timestamp = { $lt: new Date(before) };
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("Message loading timed out"));
+      }, MESSAGE_LOAD_TIMEOUT);
+    });
 
-      const messages = await withTimeout(
+    try {
+      // 쿼리 구성
+      const query = { room: roomId };
+      if (before) {
+        query.timestamp = { $lt: new Date(before) };
+      }
+
+      // 메시지 로드 with profileImage
+      const messages = await Promise.race([
         Message.find(query)
           .populate("sender", "name email profileImage")
-          .populate("file", "filename originalname mimetype size")
+          .populate({
+            path: "file",
+            select: "filename originalname mimetype size",
+          })
           .sort({ timestamp: -1 })
           .limit(limit + 1)
           .lean(),
-        MESSAGE_LOAD_TIMEOUT,
-        "Message loading timed out"
+        timeoutPromise,
+      ]);
+
+      // 결과 처리
+      const hasMore = messages.length > limit;
+      const resultMessages = messages.slice(0, limit);
+      const sortedMessages = resultMessages.sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
       );
 
-      const hasMore = messages.length > limit;
-      const sortedMessages = messages
-        .slice(0, limit)
-        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-      // 읽음 상태 업데이트
+      // 읽음 상태 비동기 업데이트
       if (sortedMessages.length > 0 && socket.user) {
         const messageIds = sortedMessages.map((msg) => msg._id);
         Message.updateMany(
@@ -69,9 +74,18 @@ module.exports = function (io) {
             "readers.userId": { $ne: socket.user.id },
           },
           {
-            $push: { readers: { userId: socket.user.id, readAt: new Date() } },
+            $push: {
+              readers: {
+                userId: socket.user.id,
+                readAt: new Date(),
+              },
+            },
           }
-        ).catch((err) => console.error("Read status update error:", err));
+        )
+          .exec()
+          .catch((error) => {
+            console.error("Read status update error:", error);
+          });
       }
 
       return {
@@ -80,7 +94,21 @@ module.exports = function (io) {
         oldestTimestamp: sortedMessages[0]?.timestamp || null,
       };
     } catch (error) {
-      console.error("Load messages error:", error);
+      if (error.message === "Message loading timed out") {
+        logDebug("message load timeout", {
+          roomId,
+          before,
+          limit,
+        });
+      } else {
+        console.error("Load messages error:", {
+          error: error.message,
+          stack: error.stack,
+          roomId,
+          before,
+          limit,
+        });
+      }
       throw error;
     }
   };
@@ -135,14 +163,7 @@ module.exports = function (io) {
   // 중복 로그인 처리 함수
   const handleDuplicateLogin = async (existingSocket, newSocket) => {
     try {
-      if (!existingSocket) {
-        console.warn(
-          "[Socket.IO] No existing socket found for duplicate login"
-        );
-        return;
-      }
-
-      // 기존 연결에 알림 전송
+      // 기존 연결에 중복 로그인 알림
       existingSocket.emit("duplicate_login", {
         type: "new_login_attempt",
         deviceInfo: newSocket.handshake.headers["user-agent"],
@@ -150,21 +171,28 @@ module.exports = function (io) {
         timestamp: Date.now(),
       });
 
-      // 기존 소켓 종료 처리
-      setTimeout(() => {
-        if (existingSocket.connected) {
-          console.log(
-            `[Socket.IO] Disconnecting existing socket: ${existingSocket.id}`
-          );
-          existingSocket.emit("session_ended", {
-            reason: "duplicate_login",
-            message: "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.",
-          });
-          existingSocket.disconnect(true);
-        }
-      }, DUPLICATE_LOGIN_TIMEOUT);
+      // 타임아웃 설정
+      return new Promise((resolve) => {
+        setTimeout(async () => {
+          try {
+            // 기존 세션 종료
+            existingSocket.emit("session_ended", {
+              reason: "duplicate_login",
+              message: "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.",
+            });
+
+            // 기존 연결 종료
+            existingSocket.disconnect(true);
+            resolve();
+          } catch (error) {
+            console.error("Error during session termination:", error);
+            resolve();
+          }
+        }, DUPLICATE_LOGIN_TIMEOUT);
+      });
     } catch (error) {
-      console.error("[Socket.IO] Duplicate login handling error:", error);
+      console.error("Duplicate login handling error:", error);
+      throw error;
     }
   };
 
@@ -185,14 +213,10 @@ module.exports = function (io) {
 
       // 이미 연결된 사용자인지 확인
       const existingSocketId = connectedUsers.get(decoded.user.id);
-      console.log("existingSocketId: ", existingSocketId);
-
       if (existingSocketId) {
         const existingSocket = io.sockets.sockets.get(existingSocketId);
         if (existingSocket) {
           // 중복 로그인 처리
-          console.log("existingSocket: ", existingSocket);
-
           await handleDuplicateLogin(existingSocket, socket);
         }
       }
@@ -201,17 +225,10 @@ module.exports = function (io) {
         decoded.user.id,
         sessionId
       );
-      if (validationResult.isValid) {
-        connectedUsers.set(decoded.user.id, socket.id);
-        next();
-      } else {
-        next(new Error("Invalid session"));
+      if (!validationResult.isValid) {
+        console.error("Session validation failed:", validationResult);
+        return next(new Error(validationResult.message || "Invalid session"));
       }
-
-      // if (!validationResult.isValid) {
-      //   console.error("Session validation failed:", validationResult);
-      //   return next(new Error(validationResult.message || "Invalid session"));
-      // }
 
       const user = await User.findById(decoded.user.id);
       if (!user) {
@@ -250,59 +267,33 @@ module.exports = function (io) {
       userName: socket.user?.name,
     });
 
-    let pingTimeout;
+    if (socket.user) {
+      // 이전 연결이 있는지 확인
+      const previousSocketId = connectedUsers.get(socket.user.id);
+      if (previousSocketId && previousSocketId !== socket.id) {
+        const previousSocket = io.sockets.sockets.get(previousSocketId);
+        if (previousSocket) {
+          // 이전 연결에 중복 로그인 알림
+          previousSocket.emit("duplicate_login", {
+            type: "new_login_attempt",
+            deviceInfo: socket.handshake.headers["user-agent"],
+            ipAddress: socket.handshake.address,
+            timestamp: Date.now(),
+          });
 
-    const heartbeat = () => {
-      clearTimeout(pingTimeout);
-      pingTimeout = setTimeout(() => {
-        socket.disconnect(true);
-      }, 30000); // 30초 타임아웃
-    };
-
-    socket.on("ping", () => {
-      socket.emit("pong");
-      heartbeat();
-    });
-
-    // 기존 연결 성공 이벤트에 더 자세한 정보 추가
-    socket.emit("connect_success", {
-      socketId: socket.id,
-      userId: socket.user?.id,
-      connected: true,
-      timestamp: Date.now(),
-    });
-
-    // 재연결 시 이전 방 정보 복구 추가
-    socket.on("reconnect", async () => {
-      if (socket.user) {
-        const currentRoom = userRooms.get(socket.user.id);
-        if (currentRoom) {
-          socket.join(currentRoom);
-          // 방 정보 다시 로드
-          const room = await Room.findById(currentRoom).populate(
-            "participants",
-            "name email profileImage"
-          );
-          if (room) {
-            socket.emit("joinRoomSuccess", {
-              roomId: currentRoom,
-              participants: room.participants,
-              socketConnected: true,
+          // 이전 연결 종료 처리
+          setTimeout(() => {
+            previousSocket.emit("session_ended", {
+              reason: "duplicate_login",
+              message: "다른 기기에서 로그인하여 현재 세션이 종료되었습니다.",
             });
-          }
+            previousSocket.disconnect(true);
+          }, DUPLICATE_LOGIN_TIMEOUT);
         }
       }
-    });
 
-    if (socket.user) {
-      const currentRoom = userRooms.get(socket.user.id);
-      if (currentRoom) {
-        socket.join(currentRoom);
-        socket.emit("joinRoomSuccess", {
-          roomId: currentRoom,
-          socketConnected: true,
-        });
-      }
+      // 새로운 연결 정보 저장
+      connectedUsers.set(socket.user.id, socket.id);
     }
 
     // 이전 메시지 로딩 처리 개선
@@ -677,8 +668,6 @@ module.exports = function (io) {
 
     // 연결 해제 처리
     socket.on("disconnect", async (reason) => {
-      clearTimeout(pingTimeout);
-
       if (!socket.user) return;
 
       try {
@@ -874,6 +863,7 @@ module.exports = function (io) {
     let accumulatedContent = "";
     const timestamp = new Date();
 
+    // 스트리밍 세션 초기화
     streamingSessions.set(messageId, {
       room,
       aiType: aiName,
@@ -884,6 +874,14 @@ module.exports = function (io) {
       reactions: {},
     });
 
+    logDebug("AI response started", {
+      messageId,
+      aiType: aiName,
+      room,
+      query,
+    });
+
+    // 초기 상태 전송
     io.to(room).emit("aiMessageStart", {
       messageId,
       aiType: aiName,
@@ -891,39 +889,103 @@ module.exports = function (io) {
     });
 
     try {
+      // AI 응답 생성 및 스트리밍
       await aiService.generateResponse(query, aiName, {
-        onStart: () => console.log("AI generation started"),
+        onStart: () => {
+          logDebug("AI generation started", {
+            messageId,
+            aiType: aiName,
+          });
+        },
         onChunk: async (chunk) => {
           accumulatedContent += chunk.currentChunk || "";
+
+          const session = streamingSessions.get(messageId);
+          if (session) {
+            session.content = accumulatedContent;
+            session.lastUpdate = Date.now();
+          }
+
           io.to(room).emit("aiMessageChunk", {
             messageId,
             currentChunk: chunk.currentChunk,
             fullContent: accumulatedContent,
+            isCodeBlock: chunk.isCodeBlock,
+            timestamp: new Date(),
+            aiType: aiName,
             isComplete: false,
           });
         },
         onComplete: async (finalContent) => {
+          // 스트리밍 세션 정리
           streamingSessions.delete(messageId);
+
+          // AI 메시지 저장
+          const aiMessage = await Message.create({
+            room,
+            content: finalContent.content,
+            type: "ai",
+            aiType: aiName,
+            timestamp: new Date(),
+            reactions: {},
+            metadata: {
+              query,
+              generationTime: Date.now() - timestamp,
+              completionTokens: finalContent.completionTokens,
+              totalTokens: finalContent.totalTokens,
+            },
+          });
+
+          // 완료 메시지 전송
           io.to(room).emit("aiMessageComplete", {
             messageId,
+            _id: aiMessage._id,
             content: finalContent.content,
+            aiType: aiName,
+            timestamp: new Date(),
             isComplete: true,
+            query,
+            reactions: {},
+          });
+
+          logDebug("AI response completed", {
+            messageId,
+            aiType: aiName,
+            contentLength: finalContent.content.length,
+            generationTime: Date.now() - timestamp,
           });
         },
         onError: (error) => {
-          streamingSessions.delete(messageId); // 에러 시 세션 정리
+          streamingSessions.delete(messageId);
+          console.error("AI response error:", error);
+
           io.to(room).emit("aiMessageError", {
             messageId,
+            error: error.message || "AI 응답 생성 중 오류가 발생했습니다.",
+            aiType: aiName,
+          });
+
+          logDebug("AI response error", {
+            messageId,
+            aiType: aiName,
             error: error.message,
           });
         },
       });
     } catch (error) {
-      streamingSessions.delete(messageId); // 예외 발생 시 세션 정리
+      streamingSessions.delete(messageId);
       console.error("AI service error:", error);
+
       io.to(room).emit("aiMessageError", {
         messageId,
-        error: "AI 서비스 오류",
+        error: error.message || "AI 서비스 오류가 발생했습니다.",
+        aiType: aiName,
+      });
+
+      logDebug("AI service error", {
+        messageId,
+        aiType: aiName,
+        error: error.message,
       });
     }
   }
