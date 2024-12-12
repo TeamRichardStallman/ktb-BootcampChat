@@ -264,61 +264,6 @@ class AuthService {
       throw this._handleError(error);
     }
   }
-  // 사용 안함
-  async changePassword(currentPassword, newPassword) {
-    try {
-      const user = this.getCurrentUser();
-      if (!user?.token) {
-        throw new Error("인증 정보가 없습니다.");
-      }
-
-      const response = await axios.put(
-        `${API_URL}/api/users/profile`,
-        {
-          name: user.name,
-          currentPassword,
-          newPassword,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "x-auth-token": user.token,
-            "x-session-id": user.sessionId,
-          },
-        }
-      );
-
-      if (response.data?.success) {
-        return true;
-      }
-
-      throw new Error(
-        response.data?.message || "비밀번호 변경에 실패했습니다."
-      );
-    } catch (error) {
-      console.error("Password change error:", error);
-
-      if (error.response?.status === 401) {
-        if (
-          error.response.data?.message?.includes("비밀번호가 일치하지 않습니다")
-        ) {
-          throw new Error("현재 비밀번호가 일치하지 않습니다.");
-        }
-
-        try {
-          const refreshed = await this.refreshToken();
-          if (refreshed) {
-            return this.changePassword(currentPassword, newPassword);
-          }
-        } catch (refreshError) {
-          throw new Error("인증이 만료되었습니다. 다시 로그인해주세요.");
-        }
-      }
-
-      throw this._handleError(error);
-    }
-  }
-
   getCurrentUser() {
     try {
       const userStr = localStorage.getItem("user");
