@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Toast } from "../components/Toast";
 import fileService from "../services/fileService";
 
@@ -19,9 +19,7 @@ export const useMessageHandling = (
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
-
-  const [isSending, setIsSending] = useState(false);
-  const sendingTimerRef = useRef(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 추가
 
   const handleMessageChange = useCallback((e) => {
     const newValue = e.target.value;
@@ -97,25 +95,17 @@ export const useMessageHandling = (
     }
   }, [socketRef, router?.query?.room, loadingMessages, messages]);
 
-  useEffect(() => {
-    return () => {
-      if (sendingTimerRef.current) {
-        clearTimeout(sendingTimerRef.current);
-      }
-    };
-  }, []);
-
   const handleMessageSubmit = useCallback(
     async (messageData) => {
-      if (!socketRef.current?.connected || !currentUser) {
-        console.error("[Chat] Cannot send message: Socket not connected");
-        Toast.error("채팅 서버와 연결이 끊어졌습니다.");
+      // 이미 전송 중이면 무시
+      if (isSubmitting) {
+        console.log("[Chat] Message already being sent, skipping...");
         return;
       }
 
-      // 이미 전송 중이면 리턴
-      if (isSending) {
-        console.log("[Chat] Message sending in progress, skipping...");
+      if (!socketRef.current?.connected || !currentUser) {
+        console.error("[Chat] Cannot send message: Socket not connected");
+        Toast.error("채팅 서버와 연결이 끊어졌습니다.");
         return;
       }
 
@@ -126,66 +116,55 @@ export const useMessageHandling = (
       }
 
       try {
-        setIsSending(true);
+        setIsSubmitting(true); // 전송 시작
 
-        // 이전 타이머가 있다면 제거
-        if (sendingTimerRef.current) {
-          clearTimeout(sendingTimerRef.current);
-        }
+        console.log("[Chat] Sending message:", messageData);
 
-        // 디바운스 처리
-        sendingTimerRef.current = setTimeout(async () => {
-          console.log("[Chat] Sending message:", {
-            type: messageData.type,
-            content: messageData.content,
-          });
+        if (messageData.type === "file") {
+          setUploading(true);
+          setUploadError(null);
+          setUploadProgress(0);
 
-          if (messageData.type === "file") {
-            setUploading(true);
-            setUploadError(null);
-            setUploadProgress(0);
+          const uploadResponse = await fileService.uploadFile(
+            messageData.fileData.file,
+            (progress) => setUploadProgress(progress)
+          );
 
-            const uploadResponse = await fileService.uploadFile(
-              messageData.fileData.file,
-              (progress) => setUploadProgress(progress)
+          if (!uploadResponse.success) {
+            throw new Error(
+              uploadResponse.message || "파일 업로드에 실패했습니다."
             );
-
-            if (!uploadResponse.success) {
-              throw new Error(
-                uploadResponse.message || "파일 업로드에 실패했습니다."
-              );
-            }
-
-            socketRef.current.emit("chatMessage", {
-              room: roomId,
-              type: "file",
-              content: messageData.content?.trim() || "",
-              fileData: {
-                _id: uploadResponse.data.file._id,
-                filename: uploadResponse.data.file.filename,
-                originalname: uploadResponse.data.file.originalname,
-                mimetype: uploadResponse.data.file.mimetype,
-                size: uploadResponse.data.file.size,
-              },
-            });
-
-            setFilePreview(null);
-            setUploading(false);
-            setUploadProgress(0);
-          } else if (messageData.content?.trim()) {
-            socketRef.current.emit("chatMessage", {
-              room: roomId,
-              type: "text",
-              content: messageData.content.trim(),
-            });
           }
 
-          // 메시지 전송 후에 상태 초기화
+          socketRef.current.emit("chatMessage", {
+            room: roomId,
+            type: "file",
+            content: messageData.content || "",
+            fileData: {
+              _id: uploadResponse.data.file._id,
+              filename: uploadResponse.data.file.filename,
+              originalname: uploadResponse.data.file.originalname,
+              mimetype: uploadResponse.data.file.mimetype,
+              size: uploadResponse.data.file.size,
+            },
+          });
+
+          setFilePreview(null);
           setMessage("");
-          setShowEmojiPicker(false);
-          setShowMentionList(false);
-          sendingTimerRef.current = null;
-        }, 100); // 100ms 디바운스
+          setUploading(false);
+          setUploadProgress(0);
+        } else if (messageData.content?.trim()) {
+          socketRef.current.emit("chatMessage", {
+            room: roomId,
+            type: "text",
+            content: messageData.content.trim(),
+          });
+
+          setMessage("");
+        }
+
+        setShowEmojiPicker(false);
+        setShowMentionList(false);
       } catch (error) {
         console.error("[Chat] Message submit error:", error);
 
@@ -204,10 +183,13 @@ export const useMessageHandling = (
           setUploading(false);
         }
       } finally {
-        setIsSending(false);
+        // 전송이 완료되면 300ms 후에 다시 전송 가능하도록 설정
+        setTimeout(() => {
+          setIsSubmitting(false);
+        }, 300);
       }
     },
-    [currentUser, router, handleSessionError, socketRef, isSending]
+    [currentUser, router, handleSessionError, socketRef, isSubmitting]
   );
 
   const handleEmojiToggle = useCallback(() => {
