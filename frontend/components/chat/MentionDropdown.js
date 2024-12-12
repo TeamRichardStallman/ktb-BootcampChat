@@ -6,6 +6,13 @@ import {
   getContrastTextColor,
 } from "../../utils/colorUtils";
 
+const imageOverlayStyle = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+  borderRadius: "inherit",
+};
+
 const MentionDropdown = ({
   participants = [],
   activeIndex = 0,
@@ -78,12 +85,12 @@ const MentionDropdown = ({
   const getAvatarContent = useCallback((user) => {
     if (user.isAI) {
       return user.name === "wayneAI"
-        ? "W"
+        ? "ai/wayne.webp"
         : user.name === "consultingAI"
-        ? "C"
+        ? "ai/consult.webp"
         : user.name === "AIexpert"
-        ? "E"
-        : user.name.charAt(0).toUpperCase(); // 매칭되지 않는 경우 첫 글자 반환
+        ? "ai/ai_dr.webp"
+        : "ai/wayne.webp";
     }
     return user.name.charAt(0).toUpperCase();
   }, []);
@@ -126,7 +133,16 @@ const MentionDropdown = ({
               className="mention-avatar"
               aria-label={`${user.name}의 아바타`}
             >
-              {getAvatarContent(user)}
+              {user.isAI ? (
+                <Avatar.Image
+                  src={getAvatarContent(user)}
+                  alt={`${user?.name}'s profile`}
+                  style={imageOverlayStyle}
+                  loading="lazy"
+                />
+              ) : (
+                getAvatarContent(user)
+              )}
             </Avatar>
 
             <div className="mention-info">
