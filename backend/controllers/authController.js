@@ -2,6 +2,7 @@ const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const { jwtSecret } = require("../config/keys");
 const SessionService = require("../services/sessionService");
+const bcrypt = require("bcryptjs");
 
 const authController = {
   async register(req, res) {
@@ -135,11 +136,12 @@ const authController = {
       }
 
       // 비밀번호 확인
-      const isMatch = await user.matchPassword(password);
+      const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
+        console.error("로그인 실패: 비밀번호 불일치.");
         return res.status(401).json({
           success: false,
-          message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+          message: "이메일 주소가 없거나 비밀번호가 틀렸습니다.",
         });
       }
 
