@@ -282,8 +282,10 @@ function ChatRoomsComponent() {
     [isRetrying, retryCount, getRetryDelay]
   );
 
-  const attemptConnection = useCallback(
-    async (retryAttempt = 0) => {
+  const attemptConnection = useCallback(async () => {
+    let retryAttempt = 0;
+
+    while (retryAttempt <= RETRY_CONFIG.maxRetries) {
       try {
         setConnectionStatus(CONNECTION_STATUS.CONNECTING);
 
@@ -308,15 +310,14 @@ function ChatRoomsComponent() {
         if (!error.response && retryAttempt < RETRY_CONFIG.maxRetries) {
           const delay = getRetryDelay(retryAttempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
-          return attemptConnection(retryAttempt + 1);
+          retryAttempt += 1;
+        } else {
+          setConnectionStatus(CONNECTION_STATUS.ERROR);
+          throw new Error("SERVER_UNREACHABLE");
         }
-
-        setConnectionStatus(CONNECTION_STATUS.ERROR);
-        throw new Error("SERVER_UNREACHABLE");
       }
-    },
-    [getRetryDelay]
-  );
+    }
+  }, [getRetryDelay]);
 
   const fetchRooms = useCallback(
     async (isLoadingMore = false) => {
