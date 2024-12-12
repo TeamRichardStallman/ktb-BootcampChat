@@ -17,8 +17,6 @@ exports.uploadToS3 = async (filePath, filename) => {
       Body: fileData,
     };
 
-    console.log('Uploading to S3 with params:', uploadParams);
-
     await s3Client.send(new PutObjectCommand(uploadParams));
     await fs.unlink(filePath); // 로컬 파일 삭제
     return `uploads/${filename}`;
