@@ -14,6 +14,13 @@ import {
   Spinner,
   Text,
   Alert,
+  Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Input,
+  FormGroup,
+  Label,
 } from "@goorm-dev/vapor-components";
 import {
   HScrollTable,
@@ -201,6 +208,10 @@ function ChatRoomsComponent() {
   const isLoadingRef = useRef(false);
   const previousRoomsRef = useRef([]);
   const lastLoadedPageRef = useRef(0);
+
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [pendingRoomId, setPendingRoomId] = useState(null);
 
   const getRetryDelay = useCallback((retryCount) => {
     const delay =
@@ -592,7 +603,7 @@ function ChatRoomsComponent() {
     };
   }, [currentUser, handleAuthError]);
 
-  const handleJoinRoom = async (roomId) => {
+  const handleJoinRoom = async (roomId, password = null) => {
     if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
       setError({
         title: "채팅방 입장 실패",
@@ -605,10 +616,8 @@ function ChatRoomsComponent() {
     try {
       const response = await axiosInstance.post(
         `/api/rooms/${roomId}/join`,
-        {},
-        {
-          timeout: 5000,
-        }
+        password ? { password } : {},
+        { timeout: 5000 }
       );
 
       if (response.data.success) {
@@ -622,6 +631,11 @@ function ChatRoomsComponent() {
         errorMessage = "채팅방을 찾을 수 없습니다.";
       } else if (error.response?.status === 403) {
         errorMessage = "채팅방 입장 권한이 없습니다.";
+      } else if (error.response?.status === 401) {
+        // 비밀번호가 필요한 경우
+        setPendingRoomId(roomId);
+        setIsPasswordModalOpen(true);
+        return;
       }
 
       setError({
@@ -630,6 +644,25 @@ function ChatRoomsComponent() {
         type: "danger",
       });
     }
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      await handleJoinRoom(pendingRoomId, passwordInput);
+      handleClosePasswordModal();
+    } catch (error) {
+      if (error.response?.status === 401) {
+        Toast.error("비밀번호가 일치하지 않습니다.");
+      }
+    }
+  };
+
+  const handleClosePasswordModal = () => {
+    setIsPasswordModalOpen(false);
+    setPendingRoomId(null);
+    setPasswordInput("");
   };
 
   const columns = useMemo(
@@ -682,7 +715,14 @@ function ChatRoomsComponent() {
           <Button
             variant="primary"
             size="md"
-            onClick={() => handleJoinRoom(rowData._id)}
+            onClick={() => {
+              if (rowData.hasPassword) {
+                setPendingRoomId(rowData._id);
+                setIsPasswordModalOpen(true);
+              } else {
+                handleJoinRoom(rowData._id);
+              }
+            }}
             disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
           >
             입장
@@ -707,6 +747,59 @@ function ChatRoomsComponent() {
 
   return (
     <div className="chat-container">
+      <Modal
+        isOpen={isPasswordModalOpen}
+        toggle={handleClosePasswordModal}
+        type="center"
+        size="md"
+        direction="vertical"
+      >
+        <ModalHeader toggle={handleClosePasswordModal}>
+          <div className="flex items-center gap-3">
+            <Lock className="w-6 h-6 text-primary mr-3" />
+            <Text as="span" typography="heading4">
+              비밀번호 입력
+            </Text>
+          </div>
+        </ModalHeader>
+
+        <form onSubmit={handlePasswordSubmit}>
+          <ModalBody className="py-6">
+            <FormGroup>
+              <Label htmlFor="password">비밀번호</Label>
+              <Input
+                id="password"
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="비밀번호를 입력하세요"
+                autoFocus
+              />
+            </FormGroup>
+          </ModalBody>
+
+          <ModalFooter>
+            <div className="flex gap-2 w-full">
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={handleClosePasswordModal}
+                className="flex-1"
+              >
+                취소
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="flex-1"
+              >
+                확인
+              </Button>
+            </div>
+          </ModalFooter>
+        </form>
+      </Modal>
       <Card className="chat-rooms-card">
         <Card.Header>
           <div className="flex justify-between items-center">
