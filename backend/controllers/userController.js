@@ -3,6 +3,9 @@ const User = require("../models/User");
 const { upload } = require("../middleware/upload");
 const path = require("path");
 const fs = require("fs").promises;
+const SessionService = require("../services/sessionService");
+const jwt = require("jsonwebtoken");
+const { jwtSecret } = require("../config/keys");
 
 // 회원가입
 exports.register = async (req, res) => {
@@ -129,13 +132,6 @@ exports.updateProfile = async (req, res) => {
   try {
     const { name, currentPassword, newPassword } = req.body;
 
-    // if (!name || name.trim().length === 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "이름을 입력해주세요.",
-    //   });
-    // }
-
     const user = await User.findById(req.user.id).select("+password");
     if (!user) {
       return res.status(404).json({
@@ -169,28 +165,43 @@ exports.updateProfile = async (req, res) => {
         });
       }
 
-      // 비밀번호 암호화
-      console.log("비밀번호 암호화 중...");
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-      console.log("암호화된 비밀번호:", hashedPassword);
-
-      user.password = hashedPassword;
-      console.log("사용자 객체에 새 비밀번호 저장:", user.password);
+      user.password = newPassword;
+      console.log("사용자 객체에 새 비밀번호 저장");
     }
 
     // 이름 변경 처리
     user.name = name.trim();
     await user.save();
 
-    console.log("저장 후 사용자 데이터베이스 상태 확인:");
-    const updatedUser = await User.findById(req.user.id);
-    console.log(updatedUser);
+    // 새 JWT 발급
+    const sessionInfo = await SessionService.getActiveSession(user._id);
+    if (!sessionInfo || !sessionInfo.sessionId) {
+      return res.status(401).json({
+        success: false,
+        message: "세션이 만료되었습니다. 다시 로그인해주세요.",
+      });
+    }
+
+    const newToken = jwt.sign(
+      {
+        user: { id: user._id },
+        sessionId: sessionInfo.sessionId,
+        iat: Math.floor(Date.now() / 1000),
+      },
+      jwtSecret,
+      { expiresIn: "24h", algorithm: "HS256" }
+    );
+
+    console.log("JWT 생성:", {
+      userId: user._id,
+      sessionId: sessionInfo.sessionId,
+      token: newToken,
+    });
 
     res.json({
       success: true,
       message: "프로필이 업데이트되었습니다.",
+      token: newToken,
       user: {
         id: user._id,
         name: user.name,
@@ -199,7 +210,7 @@ exports.updateProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update profile error:", error);
+    console.error("프로필 업데이트 오류:", error);
     res.status(500).json({
       success: false,
       message: "프로필 업데이트 중 오류가 발생했습니다.",
@@ -259,6 +270,7 @@ exports.changePassword = async (req, res) => {
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
 
+    console.log("새 비밀번호 저장 완료");
     res.json({
       success: true,
       message: "비밀번호가 성공적으로 변경되었습니다.",
