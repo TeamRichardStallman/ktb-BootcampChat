@@ -110,10 +110,6 @@ const ChatInput = forwardRef(
       async (e) => {
         e?.preventDefault();
 
-        // 현재 메시지 상태를 지역 변수에 저장
-        const currentMessage = message;
-        console.log("Submitting message:", currentMessage);
-
         if (files.length > 0) {
           try {
             const file = files[0];
@@ -121,35 +117,26 @@ const ChatInput = forwardRef(
               throw new Error("파일이 선택되지 않았습니다.");
             }
 
-            onSubmit(
-              {
-                type: "file",
-                content: currentMessage.trim(),
-                fileData: file,
-              },
-              true
-            );
+            onSubmit({
+              type: "file",
+              content: message.trim(),
+              fileData: file,
+            });
 
+            setMessage("");
             setFiles([]);
           } catch (error) {
             console.error("File submit error:", error);
             setUploadError(error.message);
           }
-        } else if (currentMessage.trim()) {
-          // 먼저 메시지 전송 시도
-          onSubmit(
-            {
-              type: "text",
-              content: currentMessage.trim(),
-            },
-            true
-          );
-        }
-
-        // 메시지 전송 후 상태 업데이트
-        requestAnimationFrame(() => {
+        } else if (message.trim()) {
+          console.log("여기서 보냄", message);
+          onSubmit({
+            type: "text",
+            content: message.trim(),
+          });
           setMessage("");
-        });
+        }
       },
       [files, message, onSubmit, setMessage]
     );

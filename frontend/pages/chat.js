@@ -124,16 +124,11 @@ const ChatPage = () => {
   );
 
   const renderContent = () => {
-    // 소켓 연결 체크를 먼저 수행
-    const isSocketConnected = socketRef.current?.connected;
-
-    if (loading || !isSocketConnected) {
+    if (loading) {
       return (
         <div className="flex items-center justify-center p-4">
           <Spinner size="sm" />
-          <Text className="ml-2">
-            {loading ? "채팅방 연결 중..." : "소켓 연결 대기 중..."}
-          </Text>
+          <Text className="ml-2">채팅방 연결 중...</Text>
         </div>
       );
     }
@@ -158,18 +153,8 @@ const ChatPage = () => {
           <WifiOff className="w-5 h-5" />
           <span className="ml-2">
             연결이 끊어졌습니다. 재연결을 시도합니다...
-            {!isSocketConnected && " (소켓 연결 재시도 중...)"}
           </span>
         </Alert>
-      );
-    }
-
-    if (!room?.participants) {
-      return (
-        <div className="flex items-center justify-center p-4">
-          <Spinner size="sm" />
-          <Text className="ml-2">채팅방 정보를 불러오는 중...</Text>
-        </div>
       );
     }
 
@@ -180,11 +165,7 @@ const ChatPage = () => {
             <AlertCircle className="w-5 h-5" />
             <span className="ml-2">메시지 로딩 중 오류가 발생했습니다.</span>
           </Alert>
-          <Button
-            variant="primary"
-            onClick={retryMessageLoad}
-            disabled={!isSocketConnected}
-          >
+          <Button variant="primary" onClick={retryMessageLoad}>
             메시지 다시 로드
           </Button>
         </div>
@@ -204,7 +185,6 @@ const ChatPage = () => {
         hasMoreMessages={hasMoreMessages}
         onLoadMore={handleLoadMore}
         socketRef={socketRef}
-        isSocketConnected={isSocketConnected}
       />
     );
   };
@@ -218,15 +198,6 @@ const ChatPage = () => {
   }
 
   const getConnectionStatus = () => {
-    const isSocketConnected = socketRef.current?.connected;
-
-    if (!isSocketConnected) {
-      return {
-        label: "소켓 연결 대기 중...",
-        color: "warning",
-      };
-    }
-
     if (connectionStatus === "connecting") {
       return {
         label: "연결 중...",
@@ -281,9 +252,7 @@ const ChatPage = () => {
             fileInputRef={fileInputRef}
             messageInputRef={messageInputRef}
             filePreview={filePreview}
-            disabled={
-              connectionStatus !== "connected" || !socketRef.current?.connected
-            }
+            disabled={connectionStatus !== "connected"}
             uploading={false}
             showEmojiPicker={showEmojiPicker}
             showMentionList={showMentionList}
@@ -301,7 +270,6 @@ const ChatPage = () => {
               setShowMentionList(false);
             }}
             onFileRemove={removeFilePreview}
-            socketConnected={socketRef.current?.connected}
           />
         </Card.Footer>
       </Card>

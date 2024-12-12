@@ -31,7 +31,6 @@ class SocketService {
       const { deviceInfo = "Unknown Device", ipAddress = "Unknown IP" } = data;
 
       // 전역 이벤트 발생
-      console.log("[Socket] Dispatching duplicateLogin event:", data);
       const duplicateLoginEvent = new CustomEvent("duplicateLogin", {
         detail: {
           deviceInfo,
@@ -155,8 +154,7 @@ class SocketService {
     });
 
     this.socket.on("duplicate_login", async (data) => {
-      console.log("[Socket] Received duplicate login event:", data);
-
+      console.log("[Socket] Duplicate login detected:", data);
       if (data.type === "new_login_attempt") {
         await this.handleDuplicateLogin(data);
       } else if (data.type === "existing_session") {
