@@ -90,15 +90,8 @@ exports.uploadFile = async (req, res) => {
     const safeFilename = generateSafeFilename(req.file.originalname);
     const currentPath = req.file.path;
 
-    console.log('Received file:', {
-      originalname: req.file.originalname,
-      safeFilename,
-      currentPath,
-    });
-
     // S3 업로드
     const path = await uploadToS3(currentPath, safeFilename);
-    console.log('Generated Path:', path); // S3 Key 로그 추가
 
     // 파일 데이터베이스 저장
     const file = new File({
@@ -109,8 +102,6 @@ exports.uploadFile = async (req, res) => {
       user: req.user.id,
       path, // Path 저장
     });
-
-    console.log('File data to be saved:', file); // 디버깅 로그 추가
 
     await file.save();
 

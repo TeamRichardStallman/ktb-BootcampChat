@@ -56,8 +56,6 @@ const storage = multer.diskStorage({
     const randomString = crypto.randomBytes(8).toString('hex');
     const safeFilename = `${timestamp}_${randomString}${ext}`;
 
-    console.log('Generated safe filename:', safeFilename);
-
     cb(null, safeFilename);
   },
 });
