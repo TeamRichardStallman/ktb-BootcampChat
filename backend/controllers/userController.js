@@ -140,16 +140,10 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    console.log("사용자 현재 데이터:", user);
-
     // 비밀번호 변경 처리
     if (currentPassword && newPassword) {
-      console.log("입력된 현재 비밀번호:", currentPassword);
-      console.log("입력된 새 비밀번호:", newPassword);
-
       // 현재 비밀번호 검증
       const isMatch = await bcrypt.compare(currentPassword, user.password);
-      console.log("현재 비밀번호와 저장된 비밀번호 비교 결과:", isMatch);
 
       if (!isMatch) {
         return res.status(401).json({
@@ -166,7 +160,6 @@ exports.updateProfile = async (req, res) => {
       }
 
       user.password = newPassword;
-      console.log("사용자 객체에 새 비밀번호 저장");
     }
 
     // 이름 변경 처리
@@ -192,12 +185,6 @@ exports.updateProfile = async (req, res) => {
       { expiresIn: "24h", algorithm: "HS256" }
     );
 
-    console.log("JWT 생성:", {
-      userId: user._id,
-      sessionId: sessionInfo.sessionId,
-      token: newToken,
-    });
-
     res.json({
       success: true,
       message: "프로필이 업데이트되었습니다.",
@@ -222,15 +209,8 @@ exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    // 디버깅 로그 추가
-    console.log("Received changePassword request");
-    console.log("User ID from token:", req.user.id);
-    console.log("Current Password Provided:", !!currentPassword);
-    console.log("New Password Provided:", !!newPassword);
-
     // 입력값 검증
     if (!currentPassword || !newPassword) {
-      console.log("Error: Current password or new password is missing");
       return res.status(400).json({
         success: false,
         message: "현재 비밀번호와 새 비밀번호를 모두 입력해야 합니다.",
@@ -238,7 +218,6 @@ exports.changePassword = async (req, res) => {
     }
 
     if (newPassword.length < 6) {
-      console.log("Error: New password is too short");
       return res.status(400).json({
         success: false,
         message: "새 비밀번호는 6자 이상이어야 합니다.",
@@ -247,7 +226,6 @@ exports.changePassword = async (req, res) => {
 
     const user = await User.findById(req.user.id).select("+password");
     if (!user) {
-      console.log("Error: User not found");
       return res.status(404).json({
         success: false,
         message: "사용자를 찾을 수 없습니다.",
@@ -257,7 +235,6 @@ exports.changePassword = async (req, res) => {
     // 현재 비밀번호 검증
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
-      console.log("Error: Current password does not match");
       return res.status(401).json({
         success: false,
         message: "현재 비밀번호가 일치하지 않습니다.",
@@ -265,12 +242,10 @@ exports.changePassword = async (req, res) => {
     }
 
     // 새 비밀번호 설정
-    console.log("Updating password...");
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
 
-    console.log("새 비밀번호 저장 완료");
     res.json({
       success: true,
       message: "비밀번호가 성공적으로 변경되었습니다.",

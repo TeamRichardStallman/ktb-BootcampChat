@@ -4,8 +4,6 @@ import { Toast } from "../components/Toast";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-console.log("Initializing Auth Service with API URL:", API_URL);
-
 // axios 인스턴스 생성
 const api = axios.create({
   baseURL: API_URL,
@@ -179,7 +177,6 @@ class AuthService {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
-      console.log("??????");
       socketService.disconnect();
       localStorage.removeItem("user");
       // 인증 상태 변경 이벤트 발생
@@ -211,12 +208,10 @@ class AuthService {
 
   async updateProfile(data) {
     try {
-      console.log("updateProfile start...:", JSON.stringify(data));
       const user = this.getCurrentUser();
       if (!user?.token) {
         throw new Error("인증 정보가 없습니다.");
       }
-      console.log(" - axios request start...:", JSON.stringify(data));
       const response = await axios.put(`${API_URL}/api/users/profile`, data, {
         headers: {
           "Content-Type": "application/json",
@@ -226,10 +221,6 @@ class AuthService {
       });
 
       if (response.data?.success) {
-        console.log(
-          "api/users/profile successed...:",
-          JSON.stringify(response.data)
-        );
         // 현재 사용자 정보 업데이트
         const updatedUser = {
           ...user,

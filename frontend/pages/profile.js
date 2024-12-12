@@ -127,35 +127,25 @@ const Profile = () => {
     // 이름 필드 유효성 검사
     if (!formData.name || formData.name.trim() === "") {
       setError("이름을 입력해주세요.");
-      console.log("Error: Name is empty");
       return;
     }
 
     // 비밀번호 필드 유효성 검사
     if (formData.currentPassword && !formData.newPassword) {
       setError("새 비밀번호를 입력해주세요.");
-      console.log(
-        "Error: New password is empty while current password is provided"
-      );
       return;
     }
     if (formData.newPassword !== formData.confirmPassword) {
       setError("새 비밀번호가 일치하지 않습니다.");
-      console.log("Error: New password and confirmation do not match");
+
       return;
     }
-
-    console.log("Submitting profile update with the following data:");
-    console.log("Name:", formData.name);
-    console.log("Current Password:", formData.currentPassword);
-    console.log("New Password:", formData.newPassword);
 
     setLoading(true);
 
     try {
       // 이름 변경 요청
       if (formData.name !== currentUser.name) {
-        console.log("Updating name...");
         if (formData.currentPassword && formData.newPassword) {
           await authService.updateProfile({
             name: formData.name,
@@ -166,9 +156,7 @@ const Profile = () => {
           await authService.updateProfile({ name: formData.name });
         }
       } else {
-        console.log("Updating password...");
         if (formData.currentPassword && formData.newPassword) {
-          console.log("Updating password for real...");
           await authService.updateProfile({
             name: formData.name,
             currentPassword: formData.currentPassword,

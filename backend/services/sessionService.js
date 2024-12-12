@@ -1,21 +1,21 @@
-const redisClient = require('../utils/redisClient');
-const crypto = require('crypto');
+const redisClient = require("../utils/redisClient");
+const crypto = require("crypto");
 
 class SessionService {
   static SESSION_TTL = 24 * 60 * 60; // 24 hours
-  static SESSION_PREFIX = 'session:';
-  static SESSION_ID_PREFIX = 'sessionId:';
-  static USER_SESSIONS_PREFIX = 'user_sessions:';
-  static ACTIVE_SESSION_PREFIX = 'active_session:';
+  static SESSION_PREFIX = "session:";
+  static SESSION_ID_PREFIX = "sessionId:";
+  static USER_SESSIONS_PREFIX = "user_sessions:";
+  static ACTIVE_SESSION_PREFIX = "active_session:";
 
   // 안전한 JSON 직렬화
   static safeStringify(data) {
     try {
-      if (typeof data === 'string') return data;
+      if (typeof data === "string") return data;
       return JSON.stringify(data);
     } catch (error) {
-      console.error('JSON stringify error:', error);
-      return '';
+      console.error("JSON stringify error:", error);
+      return "";
     }
   }
 
@@ -23,15 +23,15 @@ class SessionService {
   static safeParse(data) {
     try {
       if (!data) return null;
-      if (typeof data === 'object') return data;
-      if (typeof data !== 'string') return null;
-      
+      if (typeof data === "object") return data;
+      if (typeof data !== "string") return null;
+
       // 이미 객체인 경우 즉시 반환
-      if (data === '[object Object]') return null;
-      
+      if (data === "[object Object]") return null;
+
       return JSON.parse(data);
     } catch (error) {
-      console.error('JSON parse error:', error);
+      console.error("JSON parse error:", error);
       return null;
     }
   }
@@ -41,7 +41,7 @@ class SessionService {
     try {
       const jsonString = this.safeStringify(value);
       if (!jsonString) {
-        console.error('Failed to stringify value:', value);
+        console.error("Failed to stringify value:", value);
         return false;
       }
 
@@ -52,7 +52,7 @@ class SessionService {
       }
       return true;
     } catch (error) {
-      console.error('Redis setJson error:', error);
+      console.error("Redis setJson error:", error);
       return false;
     }
   }
@@ -63,7 +63,7 @@ class SessionService {
       const value = await redisClient.get(key);
       return this.safeParse(value);
     } catch (error) {
-      console.error('Redis getJson error:', error);
+      console.error("Redis getJson error:", error);
       return null;
     }
   }
@@ -80,11 +80,11 @@ class SessionService {
         createdAt: Date.now(),
         lastActivity: Date.now(),
         metadata: {
-          userAgent: metadata.userAgent || '',
-          ipAddress: metadata.ipAddress || '',
-          deviceInfo: metadata.deviceInfo || '',
-          ...metadata
-        }
+          userAgent: metadata.userAgent || "",
+          ipAddress: metadata.ipAddress || "",
+          deviceInfo: metadata.deviceInfo || "",
+          ...metadata,
+        },
       };
 
       const sessionKey = this.getSessionKey(userId);
@@ -93,25 +93,32 @@ class SessionService {
       const activeSessionKey = this.getActiveSessionKey(userId);
 
       // 세션 데이터 저장
-      const saved = await this.setJson(sessionKey, sessionData, this.SESSION_TTL);
+      const saved = await this.setJson(
+        sessionKey,
+        sessionData,
+        this.SESSION_TTL
+      );
       if (!saved) {
-        throw new Error('세션 데이터 저장에 실패했습니다.');
+        throw new Error("세션 데이터 저장에 실패했습니다.");
       }
 
       // 세션 ID 매핑 저장 - 문자열 값은 직접 저장
-      await redisClient.setEx(sessionIdKey, this.SESSION_TTL, userId.toString());
+      await redisClient.setEx(
+        sessionIdKey,
+        this.SESSION_TTL,
+        userId.toString()
+      );
       await redisClient.setEx(userSessionsKey, this.SESSION_TTL, sessionId);
       await redisClient.setEx(activeSessionKey, this.SESSION_TTL, sessionId);
 
       return {
         sessionId,
         expiresIn: this.SESSION_TTL,
-        sessionData
+        sessionData,
       };
-
     } catch (error) {
-      console.error('Session creation error:', error);
-      throw new Error('세션 생성 중 오류가 발생했습니다.');
+      console.error("Session creation error:", error);
+      throw new Error("세션 생성 중 오류가 발생했습니다.");
     }
   }
 
@@ -120,8 +127,8 @@ class SessionService {
       if (!userId || !sessionId) {
         return {
           isValid: false,
-          error: 'INVALID_PARAMETERS',
-          message: '유효하지 않은 세션 파라미터'
+          error: "INVALID_PARAMETERS",
+          message: "유효하지 않은 세션 파라미터",
         };
       }
 
@@ -130,15 +137,10 @@ class SessionService {
       const activeSessionId = await redisClient.get(activeSessionKey);
 
       if (!activeSessionId || activeSessionId !== sessionId) {
-        console.log('Session validation failed:', {
-          userId,
-          sessionId,
-          activeSessionId
-        });
         return {
           isValid: false,
-          error: 'INVALID_SESSION',
-          message: '다른 기기에서 로그인되어 현재 세션이 만료되었습니다.'
+          error: "INVALID_SESSION",
+          message: "다른 기기에서 로그인되어 현재 세션이 만료되었습니다.",
         };
       }
 
@@ -149,8 +151,8 @@ class SessionService {
       if (!sessionData) {
         return {
           isValid: false,
-          error: 'SESSION_NOT_FOUND',
-          message: '세션을 찾을 수 없습니다.'
+          error: "SESSION_NOT_FOUND",
+          message: "세션을 찾을 수 없습니다.",
         };
       }
 
@@ -160,21 +162,25 @@ class SessionService {
         await this.removeSession(userId);
         return {
           isValid: false,
-          error: 'SESSION_EXPIRED',
-          message: '세션이 만료되었습니다.'
+          error: "SESSION_EXPIRED",
+          message: "세션이 만료되었습니다.",
         };
       }
 
       // 세션 데이터 갱신
       sessionData.lastActivity = Date.now();
-      
+
       // 갱신된 세션 데이터 저장
-      const updated = await this.setJson(sessionKey, sessionData, this.SESSION_TTL);
+      const updated = await this.setJson(
+        sessionKey,
+        sessionData,
+        this.SESSION_TTL
+      );
       if (!updated) {
         return {
           isValid: false,
-          error: 'UPDATE_FAILED',
-          message: '세션 갱신에 실패했습니다.'
+          error: "UPDATE_FAILED",
+          message: "세션 갱신에 실패했습니다.",
         };
       }
 
@@ -182,20 +188,19 @@ class SessionService {
       await Promise.all([
         redisClient.expire(activeSessionKey, this.SESSION_TTL),
         redisClient.expire(this.getUserSessionsKey(userId), this.SESSION_TTL),
-        redisClient.expire(this.getSessionIdKey(sessionId), this.SESSION_TTL)
+        redisClient.expire(this.getSessionIdKey(sessionId), this.SESSION_TTL),
       ]);
 
       return {
         isValid: true,
-        session: sessionData
+        session: sessionData,
       };
-
     } catch (error) {
-      console.error('Session validation error:', error);
+      console.error("Session validation error:", error);
       return {
         isValid: false,
-        error: 'VALIDATION_ERROR',
-        message: '세션 검증 중 오류가 발생했습니다.'
+        error: "VALIDATION_ERROR",
+        message: "세션 검증 중 오류가 발생했습니다.",
       };
     }
   }
@@ -212,7 +217,7 @@ class SessionService {
             redisClient.del(this.getSessionKey(userId)),
             redisClient.del(this.getSessionIdKey(sessionId)),
             redisClient.del(userSessionsKey),
-            redisClient.del(activeSessionKey)
+            redisClient.del(activeSessionKey),
           ]);
         }
       } else {
@@ -222,12 +227,12 @@ class SessionService {
             redisClient.del(this.getSessionKey(userId)),
             redisClient.del(this.getSessionIdKey(storedSessionId)),
             redisClient.del(userSessionsKey),
-            redisClient.del(activeSessionKey)
+            redisClient.del(activeSessionKey),
           ]);
         }
       }
     } catch (error) {
-      console.error('Session removal error:', error);
+      console.error("Session removal error:", error);
       throw error;
     }
   }
@@ -240,7 +245,7 @@ class SessionService {
 
       const deletePromises = [
         redisClient.del(activeSessionKey),
-        redisClient.del(userSessionsKey)
+        redisClient.del(userSessionsKey),
       ];
 
       if (sessionId) {
@@ -253,7 +258,7 @@ class SessionService {
       await Promise.all(deletePromises);
       return true;
     } catch (error) {
-      console.error('Remove all user sessions error:', error);
+      console.error("Remove all user sessions error:", error);
       return false;
     }
   }
@@ -261,7 +266,7 @@ class SessionService {
   static async updateLastActivity(userId) {
     try {
       if (!userId) {
-        console.error('updateLastActivity: userId is required');
+        console.error("updateLastActivity: userId is required");
         return false;
       }
 
@@ -269,17 +274,21 @@ class SessionService {
       const sessionData = await this.getJson(sessionKey);
 
       if (!sessionData) {
-        console.error('updateLastActivity: No session found for user', userId);
+        console.error("updateLastActivity: No session found for user", userId);
         return false;
       }
 
       // 세션 데이터 갱신
       sessionData.lastActivity = Date.now();
-      
+
       // 갱신된 세션 데이터 저장
-      const updated = await this.setJson(sessionKey, sessionData, this.SESSION_TTL);
+      const updated = await this.setJson(
+        sessionKey,
+        sessionData,
+        this.SESSION_TTL
+      );
       if (!updated) {
-        console.error('updateLastActivity: Failed to update session data');
+        console.error("updateLastActivity: Failed to update session data");
         return false;
       }
 
@@ -291,22 +300,21 @@ class SessionService {
         await Promise.all([
           redisClient.expire(activeSessionKey, this.SESSION_TTL),
           redisClient.expire(userSessionsKey, this.SESSION_TTL),
-          redisClient.expire(sessionIdKey, this.SESSION_TTL)
+          redisClient.expire(sessionIdKey, this.SESSION_TTL),
         ]);
       }
 
       return true;
-
     } catch (error) {
-      console.error('Update last activity error:', error);
+      console.error("Update last activity error:", error);
       return false;
     }
-  }  
-  
+  }
+
   static async getActiveSession(userId) {
     try {
       if (!userId) {
-        console.error('getActiveSession: userId is required');
+        console.error("getActiveSession: userId is required");
         return null;
       }
 
@@ -328,10 +336,10 @@ class SessionService {
       return {
         ...sessionData,
         userId,
-        sessionId
+        sessionId,
       };
     } catch (error) {
-      console.error('Get active session error:', error);
+      console.error("Get active session error:", error);
       return null;
     }
   }
@@ -353,7 +361,7 @@ class SessionService {
   }
 
   static generateSessionId() {
-    return crypto.randomBytes(32).toString('hex');
+    return crypto.randomBytes(32).toString("hex");
   }
 }
 
