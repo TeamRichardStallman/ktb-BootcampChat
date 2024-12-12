@@ -1,51 +1,51 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import dynamic from "next/dynamic"; // dynamic import를 위한 import 추가
+import { Card } from "@goorm-dev/vapor-core";
 import { Button, Input, Text, Alert, Label } from "@goorm-dev/vapor-components";
-import { AlertCircle, WifiOff } from "lucide-react";
+import {
+  AlertCircle,
+  Info,
+  Clock,
+  LockKeyhole,
+  Mail,
+  WifiOff,
+} from "lucide-react";
 import authService from "../services/authService";
 import { withoutAuth } from "../middleware/withAuth";
-import Image from "next/image";
-
-// Card 컴포넌트 dynamic import
-const Card = dynamic(() =>
-  import("@goorm-dev/vapor-core").then((mod) => mod.Card)
-);
 
 const Login = () => {
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [serverStatus, setServerStatus] = useState({
     checking: true,
     connected: false,
   });
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-
   const router = useRouter();
+  const { redirect } = router.query;
 
-  // 서버 연결 상태 확인을 위한 함수 정의
-  const checkServerConnection = async () => {
-    try {
-      await authService.checkServerConnection();
-      setServerStatus({ checking: false, connected: true });
-    } catch (error) {
-      console.error("Server connection check failed:", error);
-      setServerStatus({ checking: false, connected: false });
-      setError({
-        type: "error",
-        title: "서버 연결 실패",
-        message: "서버와 연결할 수 없습니다.",
-        suggestion: "인터넷 연결을 확인하고 잠시 후 다시 시도해주세요.",
-        Icon: WifiOff,
-      });
-    }
-  };
-
-  // 서버 상태 체크 useEffect
+  // 서버 연결 상태 확인
   useEffect(() => {
+    const checkServerConnection = async () => {
+      try {
+        await authService.checkServerConnection();
+        setServerStatus({ checking: false, connected: true });
+      } catch (error) {
+        console.error("Server connection check failed:", error);
+        setServerStatus({ checking: false, connected: false });
+        setError({
+          type: "error",
+          title: "서버 연결 실패",
+          message: "서버와 연결할 수 없습니다.",
+          suggestion: "인터넷 연결을 확인하고 잠시 후 다시 시도해주세요.",
+          Icon: WifiOff,
+        });
+      }
+    };
+
     checkServerConnection();
   }, []);
 
@@ -181,14 +181,7 @@ const Login = () => {
       <Card className="auth-card">
         <Card.Body className="auth-card-body">
           <div className="auth-header">
-            <Image
-              src="/images/logo-h.png"
-              alt="Logo"
-              width={200}
-              height={50}
-              priority={true}
-              quality={75}
-            />
+            <img src="images/logo-h.png" className="w-50" />
           </div>
 
           {error && (
