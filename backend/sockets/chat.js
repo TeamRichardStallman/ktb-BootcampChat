@@ -4,7 +4,6 @@ const User = require("../models/User");
 const File = require("../models/File");
 const jwt = require("jsonwebtoken");
 const { jwtSecret } = require("../config/keys");
-const redisClient = require("../utils/redisClient");
 const SessionService = require("../services/sessionService");
 const aiService = require("../services/aiService");
 
@@ -824,22 +823,59 @@ module.exports = function (io) {
           throw new Error("Unauthorized");
         }
 
-        const message = await Message.findById(messageId);
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+          throw new Error("Invalid message ID format");
+        }
+
+        const redisKey = `message:${messageId}`;
+
+        // Redis 캐시 확인
+        let message = await redisClient.get(redisKey);
+
         if (!message) {
-          throw new Error("메시지를 찾을 수 없습니다.");
+          // DB 조회
+          message = await Message.findById(messageId);
+
+          if (!message) {
+            throw new Error("Message not found");
+          }
+
+          // Redis에 캐시 저장
+          await redisClient.set(redisKey, message.toJSON(), { ttl: 3600 });
         }
 
-        // 리액션 추가/제거
+        // 리액션 추가/제거 로직
         if (type === "add") {
-          await message.addReaction(reaction, socket.user.id);
+          if (!message.reactions[reaction]) {
+            message.reactions[reaction] = [];
+          }
+
+          if (!message.reactions[reaction].includes(socket.user.id)) {
+            message.reactions[reaction].push(socket.user.id);
+          }
         } else if (type === "remove") {
-          await message.removeReaction(reaction, socket.user.id);
+          if (message.reactions[reaction]) {
+            message.reactions[reaction] = message.reactions[reaction].filter(
+              (userId) => userId !== socket.user.id
+            );
+          }
+        } else {
+          throw new Error("Invalid reaction type");
         }
 
-        // 업데이트된 리액션 정보 브로드캐스트
+        // 데이터베이스 업데이트 및 Redis 캐시 동기화
+        await message.save();
+        await redisClient.set(redisKey, message.toJSON(), { ttl: 3600 });
+
         io.to(message.room).emit("messageReactionUpdate", {
           messageId,
           reactions: message.reactions,
+        });
+
+        console.log("Reaction processed", {
+          messageId,
+          reaction,
+          type,
         });
       } catch (error) {
         console.error("Message reaction error:", error);

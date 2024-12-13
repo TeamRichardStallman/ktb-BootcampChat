@@ -110,46 +110,37 @@ const ChatInput = forwardRef(
       async (e) => {
         e?.preventDefault();
 
+        // 방어 코드 추가: 빈 메시지와 비어 있는 파일 리스트 방지
+        if (!message.trim() && files.length === 0) return;
+
         // 현재 메시지 상태를 지역 변수에 저장
-        const currentMessage = message;
+        // const currentMessage = message;
         console.log("Submitting message:", currentMessage);
 
         if (files.length > 0) {
-          try {
-            const file = files[0];
-            if (!file || !file.file) {
-              throw new Error("파일이 선택되지 않았습니다.");
-            }
-
-            onSubmit(
+          const file = files[0];
+          if (file?.file) {
+            await onSubmit(
               {
                 type: "file",
-                content: currentMessage.trim(),
+                content: message.trim(),
                 fileData: file,
               },
               true
             );
-
             setFiles([]);
-          } catch (error) {
-            console.error("File submit error:", error);
-            setUploadError(error.message);
           }
-        } else if (currentMessage.trim()) {
-          // 먼저 메시지 전송 시도
-          onSubmit(
+        } else {
+          await onSubmit(
             {
               type: "text",
-              content: currentMessage.trim(),
+              content: message.trim(),
             },
             true
           );
         }
 
-        // 메시지 전송 후 상태 업데이트
-        requestAnimationFrame(() => {
-          setMessage("");
-        });
+        requestAnimationFrame(() => setMessage(""));
       },
       [files, message, onSubmit, setMessage]
     );
@@ -180,26 +171,30 @@ const ChatInput = forwardRef(
               item.type === "application/pdf")
         );
 
-        if (!fileItem) return;
+        // if (!fileItem) return;
 
-        const file = fileItem.getAsFile();
-        if (!file) return;
+        // const file = fileItem.getAsFile();
+        // if (!file) return;
 
-        try {
-          await handleFileValidationAndPreview(file);
-          event.preventDefault();
-        } catch (error) {
-          console.error("File paste error:", error);
+        // try {
+        //   await handleFileValidationAndPreview(file);
+        //   event.preventDefault();
+        // } catch (error) {
+        //   console.error("File paste error:", error);
+        // }
+        if (fileItem) {
+          const file = fileItem.getAsFile();
+          if (file) await handleFileValidationAndPreview(file);
         }
       };
 
-      document.addEventListener("mousedown", handleClickOutside);
+      // document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("paste", handlePaste);
 
       return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
+        // document.removeEventListener("mousedown", handleClickOutside);
         document.removeEventListener("paste", handlePaste);
-        files.forEach((file) => URL.revokeObjectURL(file.url));
+        // files.forEach((file) => URL.revokeObjectURL(file.url));
       };
     }, [
       showEmojiPicker,
@@ -318,29 +313,38 @@ const ChatInput = forwardRef(
             default:
               return;
           }
-        } else if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          if (message.trim() || files.length > 0) {
-            handleSubmit(e);
-          }
-        } else if (e.key === "Escape" && showEmojiPicker) {
-          setShowEmojiPicker(false);
         }
+        if (e.key === "Enter" && !e.shiftKey && !isDisabled) {
+          e.preventDefault();
+
+          if (message.trim() || files.length > 0) {
+            handleSubmit(e); // 중복 호출 방지
+          }
+        }
+        // else if (e.key === "Enter" && !e.shiftKey) {
+        //   e.preventDefault();
+        //   if (message.trim() || files.length > 0) {
+        //     handleSubmit(e);
+        //   }
+        // } else if (e.key === "Escape" && showEmojiPicker) {
+        //   setShowEmojiPicker(false);
+        // }
       },
-      [
-        message,
-        files,
-        showMentionList,
-        showEmojiPicker,
-        mentionIndex,
-        getFilteredParticipants,
-        handleMentionSelect,
-        handleSubmit,
-        setMentionIndex,
-        setShowMentionList,
-        setShowEmojiPicker,
-        room, // room 의존성 추가
-      ]
+      // [
+      //   message,
+      //   files,
+      //   showMentionList,
+      //   showEmojiPicker,
+      //   mentionIndex,
+      //   getFilteredParticipants,
+      //   handleMentionSelect,
+      //   handleSubmit,
+      //   setMentionIndex,
+      //   setShowMentionList,
+      //   setShowEmojiPicker,
+      //   room, // room 의존성 추가
+      // ]
+      [message, files, showMentionList, handleSubmit, isDisabled]
     );
 
     const handleMarkdownAction = useCallback(
