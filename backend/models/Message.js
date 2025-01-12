@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+// const redisClient = require("../utils/RedisClient");
 
 const MessageSchema = new mongoose.Schema(
   {
@@ -132,6 +133,13 @@ MessageSchema.statics.markAsRead = async function (messageIds, userId) {
 
   try {
     const result = await this.bulkWrite(bulkOps, { ordered: false });
+
+    // Redis 캐시 삭제
+    for (const messageId of messageIds) {
+      const redisKey = `message:${messageId}`;
+      await redisClient.del(redisKey);
+    }
+
     return result.modifiedCount;
   } catch (error) {
     console.error("Mark as read error:", {
@@ -156,6 +164,9 @@ MessageSchema.methods.addReaction = async function (emoji, userId) {
       this.reactions.set(emoji, userReactions);
       await this.save();
     }
+
+    const redisKey = `message:${this._id}`;
+    await redisClient.del(redisKey);
 
     return this.reactions.get(emoji);
   } catch (error) {
@@ -197,10 +208,38 @@ MessageSchema.methods.removeReaction = async function (emoji, userId) {
   }
 };
 
+// 메시지 조회 시 Redis 활용
+MessageSchema.statics.findMessagesByRoom = async function (roomId, limit = 50) {
+  const redisKey = `chatMessages:${roomId}`;
+
+  // Redis 캐시 확인
+  const cachedMessages = await redisClient.get(redisKey);
+  if (cachedMessages) {
+    console.log("Redis hit:", redisKey);
+    return cachedMessages;
+  }
+
+  // DB 조회 및 Redis 업데이트
+  const messages = await this.find({ room: roomId, isDeleted: false })
+    .sort({ timestamp: -1 })
+    .limit(limit)
+    .lean();
+
+  await redisClient.set(redisKey, messages, { ttl: 3600 });
+  console.log("Redis cache set:", redisKey);
+  return messages;
+};
+
 // 메시지 소프트 삭제 메소드 추가
 MessageSchema.methods.softDelete = async function () {
+  const redisKey = `chatMessages:${this.room}`;
+
   this.isDeleted = true;
   await this.save();
+
+  // Redis 캐시 삭제
+  await redisClient.deletePattern(redisKey);
+  console.log("Redis cache deleted:", redisKey);
 };
 
 // 메시지 삭제 전 후크 개선

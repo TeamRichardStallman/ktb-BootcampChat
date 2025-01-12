@@ -4,6 +4,7 @@ const auth = require('../../middleware/auth');
 const Room = require('../../models/Room');
 const User = require('../../models/User');
 const { rateLimit } = require('express-rate-limit');
+const redisClient = require('../../utils/redisClient');
 let io;
 
 // 속도 제한 설정
@@ -79,21 +80,24 @@ router.get('/', [limiter, auth], async (req, res) => {
     const page = Math.max(0, parseInt(req.query.page) || 0);
     const pageSize = Math.min(Math.max(1, parseInt(req.query.pageSize) || 10), 50);
     const skip = page * pageSize;
-
+    const sortField = req.query.sortField || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
+    const search = req.query.search || '';
     // 정렬 설정
     const allowedSortFields = ['createdAt', 'name', 'participantsCount'];
-    const sortField = allowedSortFields.includes(req.query.sortField) 
-      ? req.query.sortField 
-      : 'createdAt';
-    const sortOrder = ['asc', 'desc'].includes(req.query.sortOrder)
-      ? req.query.sortOrder
-      : 'desc';
+
+    // 캐시
+    const redisKey = `rooms:${page}:${pageSize}:${sortField}:${sortOrder}:${search}`;
+
+    // Redis에서 데이터 조회
+    const cachedRooms = await redisClient.get(redisKey);
+    if (cachedRooms) {
+      return res.json(cachedRooms);
+    }
+
 
     // 검색 필터 구성
-    const filter = {};
-    if (req.query.search) {
-      filter.name = { $regex: req.query.search, $options: 'i' };
-    }
+    const filter = search ? { name: { $regex: search, $options: 'i' } } : {};
 
     // 총 문서 수 조회
     const totalCount = await Room.countDocuments(filter);
@@ -108,44 +112,30 @@ router.get('/', [limiter, auth], async (req, res) => {
       .lean();
 
     // 안전한 응답 데이터 구성 
-    const safeRooms = rooms.map(room => {
-      if (!room) return null;
-
-      const creator = room.creator || { _id: 'unknown', name: '알 수 없음', email: '' };
-      const participants = Array.isArray(room.participants) ? room.participants : [];
-
-      return {
-        _id: room._id?.toString() || 'unknown',
-        name: room.name || '제목 없음',
-        hasPassword: !!room.hasPassword,
-        creator: {
-          _id: creator._id?.toString() || 'unknown',
-          name: creator.name || '알 수 없음',
-          email: creator.email || ''
-        },
-        participants: participants.filter(p => p && p._id).map(p => ({
-          _id: p._id.toString(),
-          name: p.name || '알 수 없음',
-          email: p.email || ''
-        })),
-        participantsCount: participants.length,
-        createdAt: room.createdAt || new Date(),
-        isCreator: creator._id?.toString() === req.user.id,
-      };
-    }).filter(room => room !== null);
+    const safeRooms = rooms.map(room => ({
+      _id: room._id?.toString() || 'unknown',
+      name: room.name || '제목 없음',
+      hasPassword: !!room.hasPassword,
+      creator: {
+        _id: room.creator._id?.toString() || 'unknown',
+        name: room.creator.name || '알 수 없음',
+        email: room.creator.email || ''
+      },
+      participants: room.participants.map(p => ({
+        _id: p._id.toString(),
+        name: p.name || '알 수 없음',
+        email: p.email || ''
+      })),
+      participantsCount: room.participants.length,
+      createdAt: room.createdAt || new Date(),
+      isCreator: room.creator._id?.toString() === req.user.id,
+    }));
 
     // 메타데이터 계산    
     const totalPages = Math.ceil(totalCount / pageSize);
     const hasMore = skip + rooms.length < totalCount;
 
-    // 캐시 설정
-    res.set({
-      'Cache-Control': 'private, max-age=10',
-      'Last-Modified': new Date().toUTCString()
-    });
-
-    // 응답 전송
-    res.json({
+    const response = {
       success: true,
       data: safeRooms,
       metadata: {
@@ -160,26 +150,49 @@ router.get('/', [limiter, auth], async (req, res) => {
           order: sortOrder
         }
       }
-    });
+    };
+
+    // Redis에 데이터 저장 (TTL 설정)
+    await redisClient.set(redisKey, JSON.stringify(response), 'EX', 60); // 60초 TTL
+
+    res.json(response);
 
   } catch (error) {
     console.error('방 목록 조회 에러:', error);
-    const errorResponse = {
+    res.status(500).json({
       success: false,
       error: {
         message: '채팅방 목록을 불러오는데 실패했습니다.',
         code: 'ROOMS_FETCH_ERROR'
       }
-    };
-
-    if (process.env.NODE_ENV === 'development') {
-      errorResponse.error.details = error.message;
-      errorResponse.error.stack = error.stack;
-    }
-
-    res.status(500).json(errorResponse);
+    });
   }
 });
+
+// Redis 키 패턴을 상수로 정의
+const ROOMS_CACHE_PREFIX = 'rooms:';
+
+// 모든 rooms 관련 캐시를 삭제하는 함수
+async function clearRoomsCaches() {
+  try {
+    // 페이지네이션, 정렬 등의 모든 조합에 대한 캐시 키를 삭제
+    const page = 0; // 첫 페이지부터
+    const pageSize = 10; // 기본 페이지 크기
+    const sortFields = ['createdAt', 'name', 'participantsCount'];
+    const sortOrders = ['asc', 'desc'];
+    
+    for (const sortField of sortFields) {
+      for (const sortOrder of sortOrders) {
+        const redisKey = `${ROOMS_CACHE_PREFIX}${page}:${pageSize}:${sortField}:${sortOrder}:`;
+        await redisClient.del(redisKey);
+      }
+    }
+    
+    console.log('방 목록 캐시 삭제됨');
+  } catch (error) {
+    console.error('캐시 삭제 중 에러:', error);
+  }
+}
 
 // 채팅방 생성
 router.post('/', auth, async (req, res) => {
@@ -204,6 +217,9 @@ router.post('/', auth, async (req, res) => {
     const populatedRoom = await Room.findById(savedRoom._id)
       .populate('creator', 'name email')
       .populate('participants', 'name email');
+    
+    // 방이 생성되면 캐시 삭제
+    await clearRoomsCaches();
     
     // Socket.IO를 통해 새 채팅방 생성 알림
     if (io) {
